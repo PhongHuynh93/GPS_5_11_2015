@@ -1,0 +1,11 @@
+<resources>
+    <!-- ten app, ten Activity -->
+    <string name="app_name">MyTestMapGPS</string>
+    <string name="title_activity_maps">MapGoogle</string>
+    <!-- ten cho textview -->
+    <string name="text1">Latitude</string>
+    <string name="text2">Longtitude</string>
+    <string name="text3">Time</string>
+    <!-- Xuat' chu~ len man` hinh` khi lay' dia toa. do. moi' -->
+    <string name="location_updated_message">Location updated</string>
+</resources>
