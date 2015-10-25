@@ -2,10 +2,24 @@
     <!-- ten app, ten Activity -->
     <string name="app_name">MyTestMapGPS</string>
     <string name="title_activity_maps">MapGoogle</string>
-    <!-- ten cho textview -->
+    <!-- name of textview -->
     <string name="text1">Latitude</string>
     <string name="text2">Longtitude</string>
     <string name="text3">Time</string>
+    <string name="address">Address</string>
+    <!-- name of button -->
+    <string name="fetch_address">Get Address</string>
     <!-- Xuat' chu~ len man` hinh` khi lay' dia toa. do. moi' -->
     <string name="location_updated_message">Location updated</string>
+    <!-- when you retrieve address from location and you get an error-->
+    <string name="service_not_available">Sorry, the service is not available</string>
+    <string name="invalid_lat_long_used">Invalid latitude or longitude used</string>
+    <!-- when google cant file an address for a location/ when you dont put/ put any location data-->
+    <string name="no_address_found">Sorry, no address found</string>
+    <string name="no_location_data_provided">No location data provided</string>
+    <string name="address_found">Address found</string>
+    <!-- when you can't get an address of a location -->
+    <string name="no_geocoder_available">No geocoder available</string>
+
+
 </resources>

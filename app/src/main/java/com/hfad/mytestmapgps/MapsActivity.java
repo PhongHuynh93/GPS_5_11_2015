@@ -4,10 +4,14 @@ import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.location.Geocoder;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.ResultReceiver;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -39,7 +43,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     // Retrieve the latitude and longtitude coordinates of a geographic location of a last known location. 
     private Location mCurrentLocation;
     // To store parameters for requests to the fused location provider, create a LocationRequest. The parameters determine the levels of accuracy requested.
-    private LocationRequest mLocationRequest; 
+    private LocationRequest mLocationRequest;
     // 3 textView to store latitude and longtitude and time
     private TextView text_lat;
     private TextView text_long;
@@ -51,6 +55,24 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     // Time when the location was updated represented as a String.
     private String mLastUpdateTime;
 
+    //////////////////////////////////////////////////////
+    // variable to retrieve an address from a location  //
+    //////////////////////////////////////////////////////
+    ///A ResultReceiver to handle the results of the address lookup.
+    private AddressResultReceiver mResultReceiver;
+    /**
+     * Tracks whether the user has requested an address. Becomes true when the user requests an
+     * address and false when the address (or an error message) is delivered.
+     * The user requests an address by pressing the Fetch Address button. This may happen
+     * before GoogleApiClient connects. This activity uses this boolean to keep track of the
+     * user's intent. If the value is true, the activity tries to fetch the address as soon as
+     * GoogleApiClient connects.
+     */
+    private boolean mAddressRequested; // true la` da~ nhan' nut' lay dia chi 
+    // chua' address output
+    protected String mAddressOutput;
+	protected TextView mLocationAddressTextView; // output address onto the screen 
+
     /////////////////////////////////////
     // variable to resolve error // // //
     /////////////////////////////////////
@@ -58,26 +80,27 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     Now you're ready to safely run your app and connect to Google Play services. How you can perform read and write requests to any of the Google Play services using GoogleApiClient is discussed in the next section.
      */
     // Request code to use when launching the resolution activity
-    private static final int REQUEST_RESOLVE_ERROR = 1001;
-    // Unique tag for the error dialog fragment
-    private static final String DIALOG_ERROR = "dialog_error";
-
-    private static final String STATE_RESOLVING_ERROR = "resolving_error";
-    
-    ////////////////////////////////////////////////////
-    // Keys for storing activity state in the Bundle. //
-    ////////////////////////////////////////////////////
-    protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
-    protected final static String LOCATION_KEY = "location-key";
-    protected final static String LAST_UPDATED_TIME_STRING_KEY = "last-updated-time-string-key";
-
-    /////////////////////////////////////
-    // Attribute for location updates  //
-    /////////////////////////////////////
-    private static final String TAG = "location-updates-sample";
-    private static final long UPDATE_INTERVAL_IN_MILLISECONDS = 10000;
-    private static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS =
-            UPDATE_INTERVAL_IN_MILLISECONDS / 2;
+	private static final int REQUEST_RESOLVE_ERROR    = 1001;
+	// Unique tag for the error dialog fragment
+	private static final String DIALOG_ERROR          = "dialog_error";
+	
+	private static final String STATE_RESOLVING_ERROR = "resolving_error";
+	
+	////////////////////////////////////////////////////
+	// Keys for storing activity state in the Bundle. //
+	////////////////////////////////////////////////////
+	protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
+	protected final static String LOCATION_KEY                    = "location-key";
+	protected final static String LAST_UPDATED_TIME_STRING_KEY    = "last-updated-time-string-key";
+	protected static final String LOCATION_ADDRESS_KEY            = "location-address";
+	protected static final String ADDRESS_REQUESTED_KEY           = "address-request-pending";
+	
+	/////////////////////////////////////
+	// Attribute for location updates  //
+	/////////////////////////////////////
+	private static final String TAG                                   = "location-updates-sample";
+	private static final long UPDATE_INTERVAL_IN_MILLISECONDS         = 10000;
+	private static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = UPDATE_INTERVAL_IN_MILLISECONDS / 2;
 
     /**
      * To avoid executing the code in onConnectionFailed() while a previous attempt to resolve an error is ongoing, you need to retain a boolean that tracks whether your app is already attempting to resolve an error.
@@ -91,6 +114,10 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	    savedInstanceState.putBoolean(STATE_RESOLVING_ERROR, mResolvingError);
 	    savedInstanceState.putParcelable(LOCATION_KEY, mCurrentLocation);
 	    savedInstanceState.putString(LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime);
+	    // Save whether the address has been requested.
+        savedInstanceState.putBoolean(ADDRESS_REQUESTED_KEY, mAddressRequested);
+        // Save the address string.
+        savedInstanceState.putString(LOCATION_ADDRESS_KEY, mAddressOutput);
 	}
 
 	///////////////////////////////
@@ -113,16 +140,20 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+
         // Then recover the saved state during onCreate():
-        mResolvingError = savedInstanceState != null
-            && savedInstanceState.getBoolean(STATE_RESOLVING_ERROR, false);
+        mResolvingError = savedInstanceState != null && savedInstanceState.getBoolean(STATE_RESOLVING_ERROR, false);
+        mResultReceiver = new AddressResultReceiver(new Handler());
         // Locate the UI widget 
-		text_lat  = (TextView) findViewById(R.id.textView);
-		text_long = (TextView) findViewById(R.id.textView2);
-		text_time = (TextView) findViewById(R.id.textView3);
+		text_lat                 = (TextView) findViewById(R.id.textView);
+		text_long                = (TextView) findViewById(R.id.textView2);
+		text_time                = (TextView) findViewById(R.id.textView3);
+		mLocationAddressTextView = (TextView) findViewById(R.id.location_address_view);
         // set variable
 		mRequestingLocationUpdates = false;
-		mLastUpdateTime            = "";
+		mLastUpdateTime            = ""; 
+		mAddressOutput             = ""; // at the beginning, there are not any addresses
+		mAddressRequested          = false; // at the beginning, user hasn't pressed the button .
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
         // build google api to get user's location
@@ -210,6 +241,18 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             if (savedInstanceState.keySet().contains(LAST_UPDATED_TIME_STRING_KEY)) {
                 mLastUpdateTime = savedInstanceState.getString(LAST_UPDATED_TIME_STRING_KEY);
             }
+
+            // Check savedInstanceState to see if the location address string was previously found
+            // and stored in the Bundle. If it was found, display the address string in the UI.
+            if (savedInstanceState.keySet().contains(LOCATION_ADDRESS_KEY)) {
+                mAddressOutput = savedInstanceState.getString(LOCATION_ADDRESS_KEY);
+                this.displayAddressOutput();
+            }
+
+            // Check savedInstanceState to see if the address was previously requested.
+            if (savedInstanceState.keySet().contains(ADDRESS_REQUESTED_KEY)) {
+                mAddressRequested = savedInstanceState.getBoolean(ADDRESS_REQUESTED_KEY);
+            }
             updateUI(); // output old long and latitude 
         }
     }
@@ -251,6 +294,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (mCurrentLocation != null) {
             text_lat.setText(String.valueOf(mCurrentLocation.getLatitude()));
             text_long.setText(String.valueOf(mCurrentLocation.getLongitude()));
+            // Determine whether a Geocoder is available.
+            if (!Geocoder.isPresent()) {
+                Toast.makeText(this, R.string.no_geocoder_available,
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            // You must also start the intent service when the connection to Google Play services is established, if the user has already clicked the button on your app's UI.
+            if (mAddressRequested) {
+                startIntentService();
+            }
         }
         createLocationRequest();
         if (!mRequestingLocationUpdates) { // if location update is currently turned off --> turn it on. 
@@ -377,6 +430,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * just add a marker near Africa.
      * <p/>
      * This should only be called once and when we are sure that {@link #mMap} is not null.
+     * When the My Location layer is enabled, the My Location button appears in the top right corner of the map.
+     * When a user clicks the button, the camera centers the map on the current location of the device, if it is known.
+     * The location is indicated on the map by a small blue dot if the device is stationary, or as a chevron if the device is moving.
      */
     private void setUpMap() {
         mMap.addMarker(new MarkerOptions().position(new LatLng(0, 0)).title("Marker"));
@@ -445,5 +501,83 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     }
 
 
+    ////////////////////////////////////////////////////////
+    // Send a location to another class to get addresses  //
+    ////////////////////////////////////////////////////////
+    /**
+     * To create an explicit intent, specify the name of the class to use for the service: FetchAddressIntentService.class.
+     * Pass two pieces of information in the intent extras:
+     *  + A ResultReceiver to handle the results of the address lookup.
+     *  + A Location object containing the latitude and longitude that you want to convert to an address.
+     */
+    protected void startIntentService() {
+        Intent intent = new Intent(this, FetchAddressIntentService.class);
+        intent.putExtra(Constants.RECEIVER, mResultReceiver);
+        intent.putExtra(Constants.LOCATION_DATA_EXTRA, mCurrentLocation);
+        startService(intent);
+    }
 
+    /**
+     * Khi nhan nut' thi` goi. class khac de? lay' address
+     * @param view Button
+     */
+    public void fetchAddressButtonHandler(View view) {
+        // Only start the service to fetch the address if GoogleApiClient is
+        // connected.
+        if (mGoogleApiClient.isConnected() && mCurrentLocation != null) {
+            startIntentService();
+        }
+        // If GoogleApiClient isn't connected, process the user's request by
+        // setting mAddressRequested to true. Later, when GoogleApiClient connects,
+        // launch the service to fetch the address. As far as the user is
+        // concerned, pressing the Fetch Address button
+        // immediately kicks off the process of getting the address.
+        mAddressRequested = true;
+        //updateUIWidgets();
+    }
+
+    /**
+     * Sau khi lay duoc adddress 
+     * define an AddressResultReceiver that extends ResultReceiver to handle the response from FetchAddressIntentService.
+     */
+    class AddressResultReceiver extends ResultReceiver {
+        public AddressResultReceiver(Handler handler) {
+            super(handler);
+        }
+
+        // The result includes a numeric result code (resultCode) as well as a message containing the result data (resultData). 
+        // Override the onReceiveResult() method to handle the results delivered to the result receiver
+        // If the reverse geocoding process was successful, the resultData contains the address. In the case of a failure, the resultData contains text describing the reason for failure. 
+        @Override
+        protected void onReceiveResult(int resultCode, Bundle resultData) {
+
+            // Display the address string
+            // or an error message sent from the intent service.
+            mAddressOutput = resultData.getString(Constants.RESULT_DATA_KEY);
+            displayAddressOutput();
+
+            // Show a toast message if an address was found.
+            if (resultCode == Constants.SUCCESS_RESULT) {
+                showToast(getString(R.string.address_found));
+            }
+
+            // Reset. Enable the Fetch Address button and stop showing the progress bar.
+            mAddressRequested = false;
+
+        }
+    }
+
+    /**
+     * Updates the address in the UI.
+     */
+    protected void displayAddressOutput() {
+        mLocationAddressTextView.setText(mAddressOutput);
+    }
+
+    /**
+     * Shows a toast with the given text.
+     */
+    protected void showToast(String text) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+    }
 }
