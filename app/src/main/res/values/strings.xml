@@ -1,7 +1,7 @@
 <resources>
     <!-- ten app, ten Activity -->
     <string name="app_name">MyTestMapGPS</string>
-    <string name="title_activity_maps">MapGoogle</string>
+    <string name="title_activity_maps">MapGoogle2</string>
     <!-- name of textview -->
     <string name="text1">Latitude</string>
     <string name="text2">Longtitude</string>

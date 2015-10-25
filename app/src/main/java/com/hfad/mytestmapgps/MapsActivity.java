@@ -28,6 +28,11 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import org.osmdroid.api.IMapController;
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
+import org.osmdroid.util.GeoPoint;
+import org.osmdroid.views.MapView;
+
 import java.text.DateFormat;
 import java.util.Date;
 
@@ -37,6 +42,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	// private variable  // // //
 	/////////////////////////////
 	// Using Google Map
+    private MapView map;
+    private IMapController mapController;
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
     // Using the Google Play services location APIs, your app can request the last known location of the user's device = user's current location
     private GoogleApiClient mGoogleApiClient; // sd Google Client de? connect den' API
@@ -414,14 +421,20 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      */
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
-        if (mMap == null) {
+        if (map == null) {
             // Try to obtain the map from the SupportMapFragment.
-            mMap = ((SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map))
-                    .getMap();
+            map = (MapView) findViewById(R.id.map);
+            map.setTileSource(TileSourceFactory.MAPNIK);
             // Check if we were successful in obtaining the map.
-            if (mMap != null) {
+            if (map != null) {
                 setUpMap();
             }
+            // control the map
+            mapController = map.getController();
+            if (mapController != null) {
+                controlMap();
+            }
+
         }
     }
 
@@ -435,8 +448,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * The location is indicated on the map by a small blue dot if the device is stationary, or as a chevron if the device is moving.
      */
     private void setUpMap() {
-        mMap.addMarker(new MarkerOptions().position(new LatLng(0, 0)).title("Marker"));
-        mMap.setMyLocationEnabled(true);
+        //map.setBuiltInZoomControls(true);
+        map.setMultiTouchControls(true);
+    }
+
+    private void controlMap() {
+        mapController.setZoom(9);
+        GeoPoint startPoint = new GeoPoint(10.8583, 2,2944);
+        mapController.setCenter(startPoint);
     }
 
     //////////////////////////////////////////////////////////////////
