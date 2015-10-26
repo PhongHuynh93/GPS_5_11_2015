@@ -1,6 +1,7 @@
 package com.hfad.mytestmapgps;
 
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
@@ -25,8 +26,6 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.MarkerOptions;
 
 import org.osmdroid.api.IMapController;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
@@ -59,6 +58,10 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private boolean mResolvingError = false;
     // flag used to track whether the user has turned location updates on or off. 
     private boolean mRequestingLocationUpdates;
+    // flag used to track the beginning of the the location to set the map centered at that position
+    private boolean firstLocation = true;
+    private double firstLat;
+    private double firstLong;
     // Time when the location was updated represented as a String.
     private String mLastUpdateTime;
 
@@ -106,6 +109,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	// Attribute for location updates  //
 	/////////////////////////////////////
 	private static final String TAG                                   = "location-updates-sample";
+    private static final String LOG_TAG                               = "MapsActivity";
 	private static final long UPDATE_INTERVAL_IN_MILLISECONDS         = 10000;
 	private static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = UPDATE_INTERVAL_IN_MILLISECONDS / 2;
 
@@ -161,12 +165,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 		mLastUpdateTime            = ""; 
 		mAddressOutput             = ""; // at the beginning, there are not any addresses
 		mAddressRequested          = false; // at the beginning, user hasn't pressed the button .
+        // first lat and long location
+        firstLat = 0.0;
+        firstLong = 0.0;
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
         // build google api to get user's location
-        buildGoogleApiClient(); 
-		// Once you have connected to Google Play services and the location services API, you can get the last known location of a user's device.
-        // setUpMapIfNeeded();
+        buildGoogleApiClient();
+
     }
 
 	/**
@@ -188,8 +194,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     @Override
     protected void onResume() {
         super.onResume();
-        // make "Map" again when you open app. 
-        setUpMapIfNeeded();
+        // make "Map" again when you open app.
+        //setUpMapIfNeeded();
         // check if connect to google api , or track whether location updates are currently turned off. 
         if (mGoogleApiClient.isConnected() && !mRequestingLocationUpdates) {
 	        startLocationUpdates();
@@ -298,6 +304,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         // The getLastLocation() method returns a Location object from which you can retrieve the latitude and longitude coordinates of a geographic location.
         mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         //  The location object returned may be null in rare cases when the location is not available. --> check first
+        if (firstLocation) {
+            firstLocation = false;
+            firstLat = mCurrentLocation.getLatitude();
+            firstLong = mCurrentLocation.getLongitude();
+        }
+        // make "Map" again when you open app.
+        setUpMapIfNeeded();
+
         if (mCurrentLocation != null) {
             text_lat.setText(String.valueOf(mCurrentLocation.getLatitude()));
             text_long.setText(String.valueOf(mCurrentLocation.getLongitude()));
@@ -453,9 +467,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     }
 
     private void controlMap() {
-        mapController.setZoom(9);
-        GeoPoint startPoint = new GeoPoint(10.8583, 2,2944);
-        mapController.setCenter(startPoint);
+        mapController.setZoom(15);
+        GeoPoint firstStartPoint = new GeoPoint(firstLat, firstLong);
+        mapController.setCenter(firstStartPoint);
     }
 
     //////////////////////////////////////////////////////////////////
@@ -599,4 +613,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     protected void showToast(String text) {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
+
+    //////////////////////////////////
+    /////////////////////////////////////
+    ////////////////////////////////////////
+    // show route between 2 places  // // //
+    ////////////////////////////////////////
+    /////////////////////////////////////
+    //////////////////////////////////
+
 }

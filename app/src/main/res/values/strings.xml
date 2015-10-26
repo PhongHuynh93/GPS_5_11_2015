@@ -7,6 +7,8 @@
     <string name="text2">Longtitude</string>
     <string name="text3">Time</string>
     <string name="address">Address</string>
+    <string name="autoAddress">Please enter the place</string>
+
     <!-- name of button -->
     <string name="fetch_address">Get Address</string>
     <!-- Xuat' chu~ len man` hinh` khi lay' dia toa. do. moi' -->
