@@ -1,15 +1,18 @@
 package com.hfad.mytestmapgps;
 
 import android.app.Dialog;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.location.Geocoder;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -27,21 +30,46 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.osmdroid.api.IMapController;
+import org.osmdroid.bonuspack.overlays.Marker;
+import org.osmdroid.bonuspack.overlays.Polyline;
+import org.osmdroid.bonuspack.routing.OSRMRoadManager;
+import org.osmdroid.bonuspack.routing.Road;
+import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
+import java.net.URL;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 // AppCompatActivity: chứa Fragment API, mà ta sử dụng Map thuộc dạng Fragment 
+/**
+ * Bước thưc hiệ của app:
+ * 1. Kết nối đến GOOle 
+ * 2. Tạo map --> load map tại vị trí hiện tại của ta --> Tìm đường đi giữa 2 điểm bằng cách hỏi Google (update điểm của ta liên tục và vẽ liên tục quãng đường đến đích)
+ * 3. Lắng nghe update location --> load map lại tại vị trí của ta. thường xuyên
+ */
 public class MapsActivity extends AppCompatActivity implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener{
 	/////////////////////////////
 	// private variable  // // //
 	/////////////////////////////
 	// Using Google Map
     private MapView map;
+    // marker
+    private Marker hereMarker;
     private IMapController mapController;
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
     // Using the Google Play services location APIs, your app can request the last known location of the user's device = user's current location
@@ -64,6 +92,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private double firstLong;
     // Time when the location was updated represented as a String.
     private String mLastUpdateTime;
+
+    //////////////////////
+    // Route giữa 2 máy //
+    //////////////////////
+    private static final String transportation = "driving"; //walking, bicycling, transit
+    String mode = null;
+    String urlForDirections = null;
+    GeoPoint endPoint;
 
     //////////////////////////////////////////////////////
     // variable to retrieve an address from a location  //
@@ -168,6 +204,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         // first lat and long location
         firstLat = 0.0;
         firstLong = 0.0;
+        // endPoint to route between my location to there
+        endPoint = new GeoPoint(10.758097, 106.659147);
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
         // build google api to get user's location
@@ -325,6 +363,20 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             if (mAddressRequested) {
                 startIntentService();
             }
+
+            // make url to retrieve route between my location and another location
+            mode = transportation; // driving, walking, bicycling, transit
+            
+            if (mode != null) {
+                urlForDirections = makeURL(
+                        mCurrentLocation.getLatitude(),
+                        mCurrentLocation.getLongitude(),
+                        endPoint.getLatitude(),
+                        endPoint.getLongitude(), mode);
+            }
+            if (urlForDirections != null) {
+                new connectAsyncTask(urlForDirections).execute();
+            }
         }
         createLocationRequest();
         if (!mRequestingLocationUpdates) { // if location update is currently turned off --> turn it on. 
@@ -362,7 +414,30 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	@Override
     public void onLocationChanged(Location location) {
         mCurrentLocation = location;
+        // marker, if location change then update marker + draw route again
+        GeoPoint herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        hereMarker.setPosition(herePoint);
+        hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
+        hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`
+        hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
+
+        map.getOverlays().add(hereMarker); // dan' vao map
+        map.invalidate();
+
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
+
+        // update route between my location and end point
+        if (mode != null) {
+            urlForDirections = makeURL(
+                    mCurrentLocation.getLatitude(),
+                    mCurrentLocation.getLongitude(),
+                    endPoint.getLatitude(),
+                    endPoint.getLongitude(), mode);
+        }
+        if (urlForDirections != null) {
+            new connectAsyncTask(urlForDirections).execute();
+        }
+
         updateUI();
     }
 
@@ -371,8 +446,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         text_long.setText(String.valueOf(mCurrentLocation.getLongitude()));
         text_time.setText(mLastUpdateTime);
         // Xuat' ra dong chu~ len man hinh
-        Toast.makeText(this, getResources().getString(R.string.location_updated_message),
-                Toast.LENGTH_SHORT).show();
+        //Toast.makeText(this, getResources().getString(R.string.location_updated_message),Toast.LENGTH_SHORT).show();
     }
 
 
@@ -438,6 +512,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (map == null) {
             // Try to obtain the map from the SupportMapFragment.
             map = (MapView) findViewById(R.id.map);
+            hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
             map.setTileSource(TileSourceFactory.MAPNIK);
             // Check if we were successful in obtaining the map.
             if (map != null) {
@@ -621,5 +696,229 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     ////////////////////////////////////////
     /////////////////////////////////////
     //////////////////////////////////
+    public String makeURL(double sourcelat, double sourcelog, double destlat, double destlog, String travelMode) {
+        StringBuilder urlString = new StringBuilder();
+        urlString.append("http://maps.googleapis.com/maps/api/directions/json");
+        urlString.append("?origin=");// from
+        urlString.append(Double.toString(sourcelat));
+        urlString.append(",");
+        urlString.append(Double.toString(sourcelog));
+        urlString.append("&destination=");// to
+        urlString.append(Double.toString(destlat));
+        urlString.append(",");
+        urlString.append(Double.toString(destlog));
+        urlString.append("&sensor=false&mode="+travelMode+"&alternatives=true"); //  phương tiện gì
+        return urlString.toString();
+    }
+
+    // class connectAsyncTask
+    public class connectAsyncTask extends AsyncTask<Void, Void, String> {
+        private ProgressDialog progressDialog;
+        String url;
+
+        /////////////////
+        ////////////////////
+        // Constructor //////
+        ////////////////////
+        /////////////////
+
+        /**
+         * pass URL cho class này để nó kiếm JSON
+         * pass Map để nó vẽ lên map đó
+         */
+        connectAsyncTask(String urlPass) {
+            url = urlPass;
+        }
+
+
+        //////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////
+        // Method chạy nền, để hỏi google route giữa 2 điểm sau đó trả về đường đi  // // //
+        ////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////
+
+        /**
+         * Xuất ra bảng thông báo là đang tìm đường đi ra màn hình
+         */
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            //progressDialog = new ProgressDialog(MapsActivity.this);
+            //progressDialog.setMessage("Fetching route, Please wait...");
+            //progressDialog.setIndeterminate(true);
+            //progressDialog.show();
+        }
+
+        /**
+         * Từ URL ta sẽ kiếm được json chứa data về đường đi dạng "string"
+         *
+         * @param params địa chỉ URL chứa thông tin route giưa 2 điểm
+         * @return JSON string data chứa route giữa 2 điểm
+         */
+        @Override
+        protected String doInBackground(Void... params) {
+            String json = getJSONFromUrl(url); // lay json từ url này
+            // json: là 1 dạng dự liệu dc lưu trên CSDL (dạng key+value)
+            return json;
+        }
+
+        /**
+         * Vẽ đường đi khi ta tìm được data giữa 2 điểm rồi
+         *
+         * @param result JSON string data chứa route giữa 2 điểm
+         */
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            //progressDialog.hide();
+            if (result != null) {
+                drawPath(result); // khi được thông tin(JSON) dựa vào server rồi thì vẽ đường đi
+            }
+        }
+    }
+
+
+    /////////////////////////////////////
+    ////////////////////////////////////////
+    ///////////////////////////////////////////
+    // Method phụ do method chính gọi  // // //
+    ///////////////////////////////////////////
+    ////////////////////////////////////////
+    /////////////////////////////////////
+    /**
+     * Lấy dư liệu từ URL mà srever trả về
+     * @param  url địa chỉ web server cần lấy jason
+     * @return     JSON đường đi giữa 2 điểm
+     */
+    public String getJSONFromUrl(String url) {
+        StringBuilder stringBuilder = new StringBuilder();
+        Long startTime = System.currentTimeMillis();
+        // lay address
+        URL url1 = null;
+        try {
+            url1 = new URL(url);
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+        // ket noi den address do
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) url1.openConnection();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        // phuong thuc ket noi
+        try {
+            connection.setRequestMethod("GET");
+        } catch (ProtocolException e) {
+            e.printStackTrace();
+        }
+
+        // read the response
+        // noi cai ma server tra ve vao 1 string
+        try{
+            if (connection.getResponseCode() == 201 || connection.getResponseCode() == 200){
+                InputStream inputStream = connection.getInputStream();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+                String line;
+                while ((line = reader.readLine()) != null){
+                    stringBuilder.append(line);
+                }
+                inputStream.close();
+            }
+        } catch (IOException e) {
+            Log.e(getClass().getSimpleName(), "Error in request");
+            // e.printStackTrace();
+        }
+        // This returns a String object representing the value of this Integer.
+        Long timeTaken = System.currentTimeMillis() - startTime;
+        Log.d("RoadTask.doTask", "time taken: " + timeTaken);
+        return stringBuilder.toString();
+    }
+
+
+    /**
+     * Vẽ đường đi giữa 2 điểm trên bản đồ
+     * @param result JASON đã nhận được từ server
+     */
+    public void drawPath(String result) {
+        ArrayList<GeoPoint> waypoints = new ArrayList<GeoPoint>(); // tao 1 array cac toạ dộ
+        GeoPoint startPoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        waypoints.add(startPoint); // thêm điểm đầu
+
+        try {
+            final JSONObject json = new JSONObject(result); // lưu JSON mà server trả
+            JSONArray routeArray = json.getJSONArray("routes");
+            JSONObject routes = routeArray.getJSONObject(0);
+            JSONObject overviewPolylines = routes
+                    .getJSONObject("overview_polyline"); // duong di cua google
+            String duration = routes.getJSONArray("legs").getJSONObject(0)
+                    .getJSONObject("duration").getString("text"); // thời gian
+            String distance = routes.getJSONArray("legs").getJSONObject(0)
+                    .getJSONObject("distance").getString("text"); // khoảng cách
+
+            //Toast.makeText(MapsActivity.this, ("Total Road Duration: " + duration + "  / Total Distance: " + distance), Toast.LENGTH_LONG).show(); // thời gian + khoảng cách
+            String encodedString = overviewPolylines.getString("points"); // lấy value với kye là "point"
+            List<GeoPoint> list = decodePoly(encodedString); // hàm này return 1 list Geopoint doc  đường đi
+
+            for (int z = 0; z < list.size() - 1; z++) {
+                GeoPoint src = list.get(z);
+                waypoints.add(src);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        waypoints.add(endPoint); // add điểm cuối
+
+        RoadManager roadManager = new OSRMRoadManager();
+        Road road = roadManager.getRoad(waypoints);  // vẽ đường đi nối các điểm lại với nhau  --> cũng nhờ server vẽ hộ
+        //Polyline roadOverlay = RoadManager.buildRoadOverlay(road, MapsActivity.this); // hàm vẽ mình tự lập trình
+        Polyline roadOverlay = RoadManager.buildRoadOverlay(road, 0x80000080, 11.0f, MapsActivity.this); // hàm vẽ mình tự lập trình
+
+        map.getOverlays().add(roadOverlay);
+        map.invalidate();
+    }
+
+    /**
+     * Trả về rất nhiều điểm từ đây đến đích để ta có thể vẽ được 1 đường
+     * @param  encoded [description]
+     * @return         [description]
+     */
+    private List<GeoPoint> decodePoly(String encoded) {
+        List<GeoPoint> poly = new ArrayList<GeoPoint>(); // list geopoint
+        int index = 0, len = encoded.length();
+        int lat = 0, lng = 0;
+
+        while (index < len) {
+            int b, shift = 0, result = 0;
+            do {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lat += dlat;
+
+            shift = 0;
+            result = 0;
+            do {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lng += dlng;
+
+            GeoPoint p = new GeoPoint((((double) lat / 1E5)),
+                    (((double) lng / 1E5)));
+            poly.add(p);
+        }
+
+        return poly;
+    }
 
 }
