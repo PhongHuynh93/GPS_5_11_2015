@@ -34,6 +34,8 @@ import com.google.android.gms.maps.SupportMapFragment;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.osmdroid.api.IMapController;
+import org.osmdroid.bonuspack.overlays.MapEventsOverlay;
+import org.osmdroid.bonuspack.overlays.MapEventsReceiver;
 import org.osmdroid.bonuspack.overlays.Marker;
 import org.osmdroid.bonuspack.overlays.Polyline;
 import org.osmdroid.bonuspack.routing.OSRMRoadManager;
@@ -62,14 +64,71 @@ import java.util.List;
  * 1. Tạo google client cho app xin location API để xin google access nơi ở 
  * 2. Tạo map --> load map tại vị trí hiện tại của ta --> Tìm đường đi giữa 2 điểm bằng cách hỏi Google (update điểm của ta liên tục và vẽ liên tục quãng đường đến đích)
  * 3. Lắng nghe update location --> load map lại tại vị trí của ta. thường xuyên
+ *
+ * ************************************************************************************************************
+ * Activity này:
+ * 1. onCreate: build Google API
+ * 2. onStart: connect() to Google API 
+ *     + onConnect: nếu kết nối thành công, 
+ *         - tìm kiếm vị trí hiện tại của ta.
+ *         - Tạo Map : 
+ *             . Tạo map event overlay để nghe những sự kiện ta tác động lên map 
+ *             .zoom , cho nó center tại 1 điểm 
+ *         - Xuất vị trí lên màn hình
+ *         - Nếu ta nhấn nút chuyển vị trí hiện tại thành address thì xuất address
+ *         - Vẽ đường đi từ vị trí hiện tại đến endPoint
+ *         - Bắt đầu update vị trí thường xuyên
+ *             . Nếu vị trí thay đổi:
+ *                 . Xóa marker
+ *                 . Update lại vị trí hiện tại
+ *                 . Thêm marker ngay tại vị trí hiện tại
+ *                 . Thêm maker tại vị trí endpoint
+ *                 . set Map tại trung điểm vị trí hiện tai của mình --> Nếu ta chưa bật Location sau đó bật thì hàm này dò ra vị trí thí update lại map 
+ *                 . Vẽ đường đi từ vị trí hiện tại đến endPoint 
+ *                 . Update lại giao diện:
+ *                     - Thay đổi 3 textview chỉ vị tri hiện tại.
+ *         --> Nếu ko kết nối được Google (ko bạt wifi và GPS): chương trình chưa crash, hiện chữ "Bật GPS lên"
+ *     + onConnectionSuspended: khi chưa kết nối được tới Google.
+ *         - connect() lại Google
+ *     + onConnectionFailed: Nếu kết nối thất bại
+ *         - Xét xem đã giải quyết error chưa.
+ *             . Nếu rồi: thì thoát hàm này.
+ *             . Nếu chưa: 
+ *                 . thì giải quyết lỗi --> set biến đang giải quyết lỗi bằng True
+ *                 . connect() lại Google 
+ * 3. onResume: bắt đầu lắng nghe sự thay đổi trong location nếu đã kết nối tới Google
+ * 4. onPause: ko nghe thay đổi nữa
+ * 5. onStop: ngưng kết nối tới Google API
+ *
+ * ************************************************************************************************************
+ * Interface: 
+ * 1. ConnectionCallbacks: chưa các method sẽ được gọi thì kết nối thành công hay ko .... tơi google server, gọi interface này khi ta sử dụng connect()
+ *     + onConnected(): dc gọi khi kết nối thành công tới Google
+ *     + onConnectionSuspended:
+ *     + onConnectionFailed: 
+ *     
+ * *************************************************************************************************************
+ * Event
+ * 1. singleTapConfirmedHelper
+ *     + Khi tap: thì hiện vị trí tap
+ * 2. longPressHelper:
+ *     + Khi nhấn lâu: 
+ *     + Xóa marker
+ *     + set marker tại vị tri herePoint, endPoint
+ *     + Set lại endPoint
+ *     + Tìm đường tại vị tri hiện tại đến endPoint
  */
-public class MapsActivity extends AppCompatActivity implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener{
+public class MapsActivity extends AppCompatActivity implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, MapEventsReceiver{
 	/////////////////////////////
 	// private variable  // // //
 	/////////////////////////////
     private MapView map;
     private IMapController mapController;
+    private GeoPoint herePoint;
+    private GeoPoint endPoint;
     private Marker hereMarker;
+    private Marker endMarker;
+    private MapEventsOverlay mapEventsOverlay;
     // Biến App cua mình thành google client (đã xin mẹ chức năng access location)
     private GoogleApiClient mGoogleApiClient; 
     // Retrieve the latitude and longtitude coordinates of a geographic location of a last known location. 
@@ -98,7 +157,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private static final String transportation = "driving"; //walking, bicycling, transit
     String mode = null;
     String urlForDirections = null;
-    GeoPoint endPoint;
+
 
     //////////////////////////////////////////////////////
     // variable to retrieve an address from a location  //
@@ -345,6 +404,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     @Override
     public void onConnected(Bundle connectionHint) {
         mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        if (mCurrentLocation == null) {
+            showToast("Bạn vui lòng bật GPS để xác định vị trí");
+        }
 
         //  The location object returned may be null in rare cases when the location is not available. --> check first
         if (firstLocation && mCurrentLocation != null) {
@@ -422,18 +484,29 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	@Override
     public void onLocationChanged(Location location) {
         mCurrentLocation = location;
+        // xóa hết overlay
+        map.getOverlays().clear();
+        // thêm marker event
+        map.getOverlays().add(0, mapEventsOverlay); // đặt tại tận cùng overlay
+
         // marker, if location change then update marker + draw route again
-        GeoPoint herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
         hereMarker.setPosition(herePoint);
         hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
         hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`
-        hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
+        hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here3));
 
         map.getOverlays().add(hereMarker); // dan' vao map
-        GeoPoint firstStartPoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()); // center map tai vi tri minh đang đứng 
-        mapController.setCenter(firstStartPoint);
-        map.invalidate();
 
+        endMarker.setPosition(endPoint);
+        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
+        endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
+        endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
+        map.getOverlays().add(endMarker);
+
+        //GeoPoint firstStartPoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()); // center map tai vi tri minh đang đứng
+        //mapController.setCenter(firstStartPoint);
+        
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
 
         // update route between my location and end point
@@ -443,12 +516,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                     mCurrentLocation.getLongitude(),
                     endPoint.getLatitude(),
                     endPoint.getLongitude(), mode);
-            showToast("Ve lai quang duong di giua 2 diem" + urlForDirections);
+            //showToast("Ve lai quang duong di giua 2 diem" + urlForDirections);
         }
         if (urlForDirections != null) {
             new connectAsyncTask(urlForDirections).execute();
         }
-
+        map.invalidate();
         updateUI();
     }
 
@@ -514,6 +587,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             // 2 dòng sau sẽ thấy dc world map 
             map = (MapView) findViewById(R.id.map);
             map.setTileSource(TileSourceFactory.MAPNIK);
+            // tạo map event overlay
+            mapEventsOverlay = new MapEventsOverlay(this, this);
+            map.getOverlays().add(0, mapEventsOverlay);
             // Check if we were successful in obtaining the map.
             if (map != null) {
                 setUpMap();
@@ -534,6 +610,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private void setUpMap() {
         map.setMultiTouchControls(true);
         hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
+        endMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
     }
 
     /**
@@ -545,6 +622,56 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         mapController.setCenter(firstStartPoint);
     }
 
+    /**
+     * Xuất ra dòng chữ "Vị trí mà mình tap"
+     * @param  p Tọa độ click trên bản đồ
+     * @return   true nếu ta có lập trình tap
+     */
+    @Override
+    public boolean singleTapConfirmedHelper(GeoPoint p) {
+        //Toast.makeText(this, "Tapped", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Tap on ("+p.getLatitude()+","+p.getLongitude()+")", Toast.LENGTH_SHORT).show();
+        return true; // return true la sử dụng event này
+    }
+
+    /**
+     * Khi nhấn lâu, thì vẽ marker, tìm đường từ vị trí hiện tại đến marker
+     * @param  p [description]
+     * @return   [description]
+     */
+    @Override
+    public boolean longPressHelper(GeoPoint p) {
+        map.getOverlays().clear();
+
+        map.getOverlays().add(0, mapEventsOverlay);
+
+        map.getOverlays().add(hereMarker);
+
+        endMarker.setPosition(p);
+        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
+        endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
+        endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
+
+        map.getOverlays().add(endMarker);
+
+        endPoint = p;
+
+        // update route between my location and end point
+        if (mode != null) {
+            urlForDirections = makeURL(
+                    mCurrentLocation.getLatitude(),
+                    mCurrentLocation.getLongitude(),
+                    endPoint.getLatitude(),
+                    endPoint.getLongitude(), mode);
+            //showToast("Ve lai quang duong di giua 2 diem" + urlForDirections);
+        }
+        if (urlForDirections != null) {
+            new connectAsyncTask(urlForDirections).execute();
+        }
+
+        map.invalidate();
+        return true;
+    }
     //////////////////////////////////////////////////////////////////
     /////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////
