@@ -2,12 +2,13 @@ package com.hfad.mytestmapgps;
 
 import android.app.Dialog;
 import android.app.ProgressDialog;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
+
 import android.location.Geocoder;
 import android.location.Location;
+
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -57,8 +58,8 @@ import java.util.List;
 
 // AppCompatActivity: chứa Fragment API, mà ta sử dụng Map thuộc dạng Fragment 
 /**
- * Bước thưc hiệ của app:
- * 1. Kết nối đến GOOle 
+ * Bước thưc hiện của app:
+ * 1. Tạo google client cho app xin location API để xin google access nơi ở 
  * 2. Tạo map --> load map tại vị trí hiện tại của ta --> Tìm đường đi giữa 2 điểm bằng cách hỏi Google (update điểm của ta liên tục và vẽ liên tục quãng đường đến đích)
  * 3. Lắng nghe update location --> load map lại tại vị trí của ta. thường xuyên
  */
@@ -66,14 +67,11 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	/////////////////////////////
 	// private variable  // // //
 	/////////////////////////////
-	// Using Google Map
     private MapView map;
-    // marker
-    private Marker hereMarker;
     private IMapController mapController;
-    private GoogleMap mMap; // Might be null if Google Play services APK is not available.
-    // Using the Google Play services location APIs, your app can request the last known location of the user's device = user's current location
-    private GoogleApiClient mGoogleApiClient; // sd Google Client de? connect den' API
+    private Marker hereMarker;
+    // Biến App cua mình thành google client (đã xin mẹ chức năng access location)
+    private GoogleApiClient mGoogleApiClient; 
     // Retrieve the latitude and longtitude coordinates of a geographic location of a last known location. 
     private Location mCurrentLocation;
     // To store parameters for requests to the fused location provider, create a LocationRequest. The parameters determine the levels of accuracy requested.
@@ -82,15 +80,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private TextView text_lat;
     private TextView text_long;
     private TextView text_time;
-    // Bool to track whether the app is already resolving an error
-    private boolean mResolvingError = false;
+
+    private boolean mResolvingError = false;    // Bool to track whether the app is already resolving an error
+
     // flag used to track whether the user has turned location updates on or off. 
-    private boolean mRequestingLocationUpdates;
+    private boolean mRequestingLocationUpdates = false;
     // flag used to track the beginning of the the location to set the map centered at that position
     private boolean firstLocation = true;
     private double firstLat;
     private double firstLong;
-    // Time when the location was updated represented as a String.
+    // Time when the location was updated 
     private String mLastUpdateTime;
 
     //////////////////////
@@ -114,7 +113,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * user's intent. If the value is true, the activity tries to fetch the address as soon as
      * GoogleApiClient connects.
      */
-    private boolean mAddressRequested; // true la` da~ nhan' nut' lay dia chi 
+    private boolean mAddressRequested = false; // true la` da~ nhan' nut' lay dia chi 
     // chua' address output
     protected String mAddressOutput;
 	protected TextView mLocationAddressTextView; // output address onto the screen 
@@ -122,24 +121,23 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     /////////////////////////////////////
     // variable to resolve error // // //
     /////////////////////////////////////
-    /*
-    Now you're ready to safely run your app and connect to Google Play services. How you can perform read and write requests to any of the Google Play services using GoogleApiClient is discussed in the next section.
-     */
+    // Now you're ready to safely run your app and connect to Google Play services. How you can perform read and write requests to any of the Google Play services using GoogleApiClient is discussed in the next section.
     // Request code to use when launching the resolution activity
 	private static final int REQUEST_RESOLVE_ERROR    = 1001;
 	// Unique tag for the error dialog fragment
 	private static final String DIALOG_ERROR          = "dialog_error";
 	
-	private static final String STATE_RESOLVING_ERROR = "resolving_error";
+	private static final String STATE_RESOLVING_ERROR = "resolving_error";     // Bool to track whether the app is already resolving an error
 	
 	////////////////////////////////////////////////////
 	// Keys for storing activity state in the Bundle. //
 	////////////////////////////////////////////////////
 	protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
-	protected final static String LOCATION_KEY                    = "location-key";
+	
+    protected final static String LOCATION_KEY                    = "location-key"; // lưu location hiện tại của người dùng 
 	protected final static String LAST_UPDATED_TIME_STRING_KEY    = "last-updated-time-string-key";
 	protected static final String LOCATION_ADDRESS_KEY            = "location-address";
-	protected static final String ADDRESS_REQUESTED_KEY           = "address-request-pending";
+	protected static final String ADDRESS_REQUESTED_KEY           = "address-request-pending"; // true la` da~ nhan' nut' lay dia chi 
 	
 	/////////////////////////////////////
 	// Attribute for location updates  //
@@ -158,13 +156,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     @Override
 	protected void onSaveInstanceState(Bundle savedInstanceState) {
 	    super.onSaveInstanceState(savedInstanceState);
-	    savedInstanceState.putBoolean(STATE_RESOLVING_ERROR, mResolvingError);
+
+	    savedInstanceState.putBoolean(STATE_RESOLVING_ERROR, mResolvingError); // Save whether the address has been requested.
+        savedInstanceState.putBoolean(ADDRESS_REQUESTED_KEY, mAddressRequested);  // true la` da~ nhan' nut' lay dia chi 
+
 	    savedInstanceState.putParcelable(LOCATION_KEY, mCurrentLocation);
-	    savedInstanceState.putString(LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime);
-	    // Save whether the address has been requested.
-        savedInstanceState.putBoolean(ADDRESS_REQUESTED_KEY, mAddressRequested);
-        // Save the address string.
-        savedInstanceState.putString(LOCATION_ADDRESS_KEY, mAddressOutput);
+
+	    savedInstanceState.putString(LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime); // thời gian lưu lại 
+        savedInstanceState.putString(LOCATION_ADDRESS_KEY, mAddressOutput); // Save the address string.
 	}
 
 	///////////////////////////////
@@ -197,18 +196,18 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 		text_time                = (TextView) findViewById(R.id.textView3);
 		mLocationAddressTextView = (TextView) findViewById(R.id.location_address_view);
         // set variable
-		mRequestingLocationUpdates = false;
 		mLastUpdateTime            = ""; 
 		mAddressOutput             = ""; // at the beginning, there are not any addresses
-		mAddressRequested          = false; // at the beginning, user hasn't pressed the button .
-        // first lat and long location
+        
+        // first lat and long location to center the map 
         firstLat = 0.0;
         firstLong = 0.0;
         // endPoint to route between my location to there
         endPoint = new GeoPoint(10.758097, 106.659147);
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
-        // build google api to get user's location
+        
+        // xây dựng Google Client có chức năng access vị trí 
         buildGoogleApiClient();
 
     }
@@ -221,28 +220,27 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     protected void onStart() {
         super.onStart();
         if (!mResolvingError) {  
-            mGoogleApiClient.connect(); // connect to google API when it was build 
+            // hành động google client xin phép mẹ sử dụng các chức năng của mẹ 
+            // xin mẹ cho: con thực hiện "onConnected()"
+            // xin mẹ ko cho: con thực hiện "onConnectionFailed()"
+            mGoogleApiClient.connect(); 
         }
     }
 
     /**
      * Called when the activity will start interacting with the user. At this point your activity is at the top of the activity stack, with user input going to it.
-     * Set up the "map". Make it appear. 
+     * 1. update location khi bật lại app
      */
     @Override
     protected void onResume() {
         super.onResume();
-        // make "Map" again when you open app.
-        //setUpMapIfNeeded();
-        // check if connect to google api , or track whether location updates are currently turned off. 
         if (mGoogleApiClient.isConnected() && !mRequestingLocationUpdates) {
 	        startLocationUpdates();
 	    }
     }
 
     /**
-     * Consider whether you want to stop the location updates when the activity is no longer in focus, such as when the user switches to another app or to a different activity in the same app. 
-     *  This can be handy to reduce power consumption
+     * 1. Consider whether you want to stop the location updates when the activity is no longer in focus --> reduce power 
      */
     @Override
 	protected void onPause() {
@@ -260,7 +258,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      */
     @Override
     protected void onStop() {
-        mGoogleApiClient.disconnect(); // disconnect to google API
+        mGoogleApiClient.disconnect(); // xài xong phải trả lại mẹ , để ko kết nối tới google nữa, ko định vị nữa --> tiết kiệm pin 
         super.onStop();
     }
 
@@ -319,9 +317,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * Connected to Google Play services and the location services API
      * With the callback interfaces defined (onConnectionSuspended + onConnectionFailed), you're ready to call connect(). 
      * To gracefully manage the lifecyReacle of the connection, you should call connect() during the activity's onStart() (unless you want to connect later), then call disconnect() during the onStop() method. 
+     * SỬ dụng để access vị tri của người dùng , kiểm tra address dựa vào vị trí của người dùng 
      */
     protected synchronized void buildGoogleApiClient() {
     	Log.i(TAG, "Building GoogleApiClient"); // Send an INFO log message.
+        // LocationServices.API:  chứa FusedLocationProviderApi mà trong API có hàm: public abstract Location getLastLocation (GoogleApiClient client)
+        // biến máy của mình thành Client xin Google , xin chứa năng gì add vô "addApi". "Builder" = xây nhà (xây Google con)
         mGoogleApiClient = new GoogleApiClient
                 .Builder(this)
                 .addConnectionCallbacks(this)
@@ -331,23 +332,28 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     }
 
     /**
-     * which is called when the client is ready. When your app is successful connecting to google API
-     * ->  The good stuff goes here. For example
-     * Request user's location .
+     * Called when your app is successful connecting to google API -> là GOogle client(con) đã xin được mẹ thành công
+     * ->  Kết nối xong làm gì thì muốn xin Google cái j thì xin tại đây
+     * 
+     * 1. Request first user's location .
+     * 2. Make a map 
+     * 3. Lấy địa chỉ ngay tại vị trí nếu người dùng nhấn nút 
+     * 4. TÌm đường đi giữa điểm tại đây và 1 điểm chọn đại
+     * 5. Bắt đầu update vị trí người dùng thường xuyên 
      * @param connectionHint [description]
      */
     @Override
     public void onConnected(Bundle connectionHint) {
-    	// To request the last known location, call the getLastLocation() method, passing it your instance of the GoogleApiClient object.
-        // The getLastLocation() method returns a Location object from which you can retrieve the latitude and longitude coordinates of a geographic location.
         mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+
         //  The location object returned may be null in rare cases when the location is not available. --> check first
-        if (firstLocation) {
+        if (firstLocation && mCurrentLocation != null) {
             firstLocation = false;
             firstLat = mCurrentLocation.getLatitude();
             firstLong = mCurrentLocation.getLongitude();
         }
-        // make "Map" again when you open app.
+
+        // make "Map" appear
         setUpMapIfNeeded();
 
         if (mCurrentLocation != null) {
@@ -360,6 +366,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 return;
             }
             // You must also start the intent service when the connection to Google Play services is established, if the user has already clicked the button on your app's UI.
+            // // Đây là TH khi người dùng nhấn phím lấy address mà chưa kết nối được google, thì sau khi kết nối được thì mới lấy
             if (mAddressRequested) {
                 startIntentService();
             }
@@ -378,6 +385,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 new connectAsyncTask(urlForDirections).execute();
             }
         }
+
         createLocationRequest();
         if (!mRequestingLocationUpdates) { // if location update is currently turned off --> turn it on. 
 	        startLocationUpdates();
@@ -385,8 +393,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     }
 
     /**
-     * The last known location of the device provides a handy base from which to start, ensuring that the app has a known location before starting the periodic location updates.
-     * The priority of PRIORITY_HIGH_ACCURACY, combined with the ACCESS_FINE_LOCATION permission setting that you've defined in the app manifest, and a fast update interval of 5000 milliseconds (5 seconds), causes the fused location provider to return location updates that are accurate to within a few feet. This approach is appropriate for mapping apps that display the location in real time.
+     * LocationRequest: chứa tham số cho FusedLocationProviderApi.
+     * 
      */
     protected void createLocationRequest() {
 	    mLocationRequest = new LocationRequest();
@@ -422,6 +430,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
 
         map.getOverlays().add(hereMarker); // dan' vao map
+        GeoPoint firstStartPoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()); // center map tai vi tri minh đang đứng 
+        mapController.setCenter(firstStartPoint);
         map.invalidate();
 
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
@@ -433,6 +443,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                     mCurrentLocation.getLongitude(),
                     endPoint.getLatitude(),
                     endPoint.getLongitude(), mode);
+            showToast("Ve lai quang duong di giua 2 diem" + urlForDirections);
         }
         if (urlForDirections != null) {
             new connectAsyncTask(urlForDirections).execute();
@@ -493,26 +504,15 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     ///////////////////
     ////////////////
     /**
-     * Sets up the map if it is possible to do so (i.e., the Google Play services APK is correctly
-     * installed) and the map has not already been instantiated.. This will ensure that we only ever
-     * call {@link #setUpMap()} once when {@link #mMap} is not null.
-     * <p/>
-     * If it isn't installed {@link SupportMapFragment} (and
-     * {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for the user to
-     * install/update the Google Play services APK on their device.
-     * <p/>
-     * A user can return to this FragmentActivity after following the prompt and correctly
-     * installing/updating/enabling the Google Play services. Since the FragmentActivity may not
-     * have been completely destroyed during this process (it is likely that it would only be
-     * stopped or paused), {@link #onCreate(Bundle)} may not be called again so we should call this
-     * method in {@link #onResume()} to guarantee that it will be called.
+     * 1. Make a map
+     * 2. Set multitouch to zoom map
+     * 3. Set map center at my Location 
      */
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
         if (map == null) {
-            // Try to obtain the map from the SupportMapFragment.
+            // 2 dòng sau sẽ thấy dc world map 
             map = (MapView) findViewById(R.id.map);
-            hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
             map.setTileSource(TileSourceFactory.MAPNIK);
             // Check if we were successful in obtaining the map.
             if (map != null) {
@@ -530,18 +530,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     /**
      * This is where we can add markers or lines, add listeners or move the camera. In this case, we
      * just add a marker near Africa.
-     * <p/>
-     * This should only be called once and when we are sure that {@link #mMap} is not null.
-     * When the My Location layer is enabled, the My Location button appears in the top right corner of the map.
-     * When a user clicks the button, the camera centers the map on the current location of the device, if it is known.
-     * The location is indicated on the map by a small blue dot if the device is stationary, or as a chevron if the device is moving.
      */
     private void setUpMap() {
-        //map.setBuiltInZoomControls(true);
         map.setMultiTouchControls(true);
+        hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
     }
 
-    private void controlMap() {
+    /**
+     * Nếu chưa tìm được thì nó zoom 15 và set tọa độ 0, 0 để load map 
+     */
+    private void controlMap() { 
         mapController.setZoom(15);
         GeoPoint firstStartPoint = new GeoPoint(firstLat, firstLong);
         mapController.setCenter(firstStartPoint);
@@ -635,13 +633,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (mGoogleApiClient.isConnected() && mCurrentLocation != null) {
             startIntentService();
         }
-        // If GoogleApiClient isn't connected, process the user's request by
-        // setting mAddressRequested to true. Later, when GoogleApiClient connects,
-        // launch the service to fetch the address. As far as the user is
-        // concerned, pressing the Fetch Address button
-        // immediately kicks off the process of getting the address.
         mAddressRequested = true;
-        //updateUIWidgets();
     }
 
     /**
