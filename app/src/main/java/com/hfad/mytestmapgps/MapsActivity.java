@@ -121,7 +121,7 @@ import java.util.List;
 public class MapsActivity extends AppCompatActivity implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, MapEventsReceiver{
 	/////////////////////////////
 	// private variable  // // //
-	/////////////////////////////
+	//////////////////////////////
     private MapView map;
     private IMapController mapController;
     private GeoPoint herePoint;
