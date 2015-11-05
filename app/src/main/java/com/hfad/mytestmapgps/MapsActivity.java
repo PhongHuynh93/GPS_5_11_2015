@@ -60,7 +60,7 @@ import java.util.List;
 
 // AppCompatActivity: chứa Fragment API, mà ta sử dụng Map thuộc dạng Fragment 
 /**
- * Bước thưc hiện của app:
+ * Bước thưc hiện của app:.
  * 1. Tạo google client cho app xin location API để xin google access nơi ở 
  * 2. Tạo map --> load map tại vị trí hiện tại của ta --> Tìm đường đi giữa 2 điểm bằng cách hỏi Google (update điểm của ta liên tục và vẽ liên tục quãng đường đến đích)
  * 3. Lắng nghe update location --> load map lại tại vị trí của ta. thường xuyên
