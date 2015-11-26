@@ -10,6 +10,7 @@
         android:layout_width="fill_parent"
         android:layout_height="fill_parent" />
 
+    <!-- Show latitude -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -19,6 +20,7 @@
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true" />
 
+    <!-- Show Longtitude -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -28,6 +30,7 @@
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true" />
 
+    <!-- Show time -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -37,6 +40,7 @@
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true" />
 
+    <!-- click get address-->
     <Button
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -46,6 +50,7 @@
         android:layout_centerHorizontal="true"
         android:onClick="fetchAddressButtonHandler"/>
 
+    <!-- Show address -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

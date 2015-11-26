@@ -150,6 +150,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private double firstLong;
     // Time when the location was updated 
     private String mLastUpdateTime;
+    // identify GPS turn on or off ?
+    private boolean has_GPS_on = false;
+    private boolean first_center_map = true; // chi? center map lan dau tien khi ket noi' toi' wifi
 
     //////////////////////
     // Route giữa 2 máy //
@@ -406,6 +409,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         mCurrentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (mCurrentLocation == null) {
             showToast("Bạn vui lòng bật GPS để xác định vị trí");
+            has_GPS_on = false;
         }
 
         //  The location object returned may be null in rare cases when the location is not available. --> check first
@@ -484,6 +488,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	@Override
     public void onLocationChanged(Location location) {
         mCurrentLocation = location;
+        
+        if (mCurrentLocation != null) 
+            has_GPS_on = true;
         // xóa hết overlay
         map.getOverlays().clear();
         // thêm marker event
@@ -491,6 +498,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 
         // marker, if location change then update marker + draw route again
         herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        // dat. ban do` tai vi. tri' hien. tai cua? minh` 
+        if (has_GPS_on && first_center_map) {
+            first_center_map = false;
+            mapController.setCenter(herePoint);
+        }
+
+
         hereMarker.setPosition(herePoint);
         hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
         hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`

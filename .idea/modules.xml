@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/MyTestMapGPS_OSM_1.iml" filepath="$PROJECT_DIR$/MyTestMapGPS_OSM_1.iml" />
+      <module fileurl="file://$PROJECT_DIR$/MyTestMapGPS_OSM_1 15-33-11-445.iml" filepath="$PROJECT_DIR$/MyTestMapGPS_OSM_1 15-33-11-445.iml" />
       <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
     </modules>
   </component>
