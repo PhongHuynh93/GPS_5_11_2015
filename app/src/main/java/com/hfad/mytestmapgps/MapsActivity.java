@@ -2,6 +2,7 @@ package com.hfad.mytestmapgps;
 
 import android.app.Dialog;
 import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
@@ -15,6 +16,7 @@ import android.os.Handler;
 import android.os.ResultReceiver;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
@@ -44,6 +46,9 @@ import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
+import org.osmdroid.views.overlay.MinimapOverlay;
+import org.osmdroid.views.overlay.Overlay;
+import org.osmdroid.views.overlay.ScaleBarOverlay;
 import org.osmdroid.views.overlay.compass.CompassOverlay;
 import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider;
 
@@ -125,8 +130,15 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	// private variable  // // //
 	//////////////////////////////
     private MapView map;
+    private List<Overlay> mapOverlay;
     // compass
     private CompassOverlay mCompassOverlay = null;
+    // thanh scale bar
+    private ScaleBarOverlay mScaleBarOverlay = null;
+    // mini map
+    private MinimapOverlay mMinimapOverlay;
+    // con duong
+    private Polyline roadOverlay;
     private IMapController mapController;
     private GeoPoint herePoint;
     private GeoPoint endPoint;
@@ -143,6 +155,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private TextView text_lat;
     private TextView text_long;
     private TextView text_time;
+    // context
+    private Context context;
 
     private boolean mResolvingError = false;    // Bool to track whether the app is already resolving an error
 
@@ -150,8 +164,6 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private boolean mRequestingLocationUpdates = false;
     // flag used to track the beginning of the the location to set the map centered at that position
     private boolean firstLocation = true;
-    private double firstLat;
-    private double firstLong;
     // Time when the location was updated 
     private String mLastUpdateTime;
     // identify GPS turn on or off ?
@@ -265,13 +277,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 		mLastUpdateTime            = ""; 
 		mAddressOutput             = ""; // at the beginning, there are not any addresses
         
-        // first lat and long location to center the map 
-        firstLat = 0.0;
-        firstLong = 0.0;
         // endPoint to route between my location to there
         endPoint = new GeoPoint(10.758097, 106.659147);
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
+
+        // context
+        context = this.getApplicationContext();
         
         // xây dựng Google Client có chức năng access vị trí 
         buildGoogleApiClient();
@@ -425,8 +437,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         //  The location object returned may be null in rare cases when the location is not available. --> check first
         if (firstLocation && mCurrentLocation != null) {
             firstLocation = false;
-            firstLat = mCurrentLocation.getLatitude();
-            firstLong = mCurrentLocation.getLongitude();
+            herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
         }
 
         // make "Map" appear
@@ -501,12 +512,6 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         
         if (mCurrentLocation != null) 
             has_GPS_on = true;
-        // xóa hết overlay
-        map.getOverlays().clear();
-        // thêm marker event
-        map.getOverlays().add(0, mapEventsOverlay); // đặt tại tận cùng overlay
-        if (mCompassOverlay != null)
-            map.getOverlays().add(mCompassOverlay);
 
         // marker, if location change then update marker + draw route again
         herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
@@ -516,23 +521,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             mapController.setCenter(herePoint);
         }
 
-
         hereMarker.setPosition(herePoint);
         hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
         hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`
         hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here3));
 
-        map.getOverlays().add(hereMarker); // dan' vao map
 
-        endMarker.setPosition(endPoint);
-        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
-        endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
-        endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
-        map.getOverlays().add(endMarker);
+        if (mapOverlay.contains(hereMarker))
+            mapOverlay.remove(hereMarker); // xóa cái here marker cũ
+        mapOverlay.add(hereMarker); // dán cái here marker mới 
 
-
-        //GeoPoint firstStartPoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()); // center map tai vi tri minh đang đứng
-        //mapController.setCenter(firstStartPoint);
         
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
 
@@ -548,6 +546,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (urlForDirections != null) {
             new connectAsyncTask(urlForDirections).execute();
         }
+
+        if (mapOverlay.contains(hereMarker)) {
+            mapOverlay.remove(hereMarker);
+        }
+        // add hereMarker
+        mapOverlay.add(hereMarker);
         map.invalidate();
         updateUI();
     }
@@ -611,25 +615,33 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
         if (map == null) {
-            // 2 dòng sau sẽ thấy dc world map 
-            map = (MapView) findViewById(R.id.map);
+            final DisplayMetrics dm = context.getResources().getDisplayMetrics();
+            // Khai bao' thong^ so' cho Map
+            map = (MapView) findViewById(R.id.map);// 2 dòng sau sẽ thấy dc world map
             map.setTileSource(TileSourceFactory.MAPNIK);
-            // tạo map event overlay
-            mapEventsOverlay = new MapEventsOverlay(this, this);
-            map.getOverlays().add(0, mapEventsOverlay); // add cái event này vào overlay trên map ở vị trí cuối cùng
-            // add thêm la bàn vào
-            // khai bao' compass
-            if (map != null) {
-                mCompassOverlay = new CompassOverlay(getApplicationContext(), new InternalCompassOrientationProvider(getApplicationContext()), map);
+            // Khai báo overlay cho map
+            mapOverlay = map.getOverlays();
+
+            mapEventsOverlay = new MapEventsOverlay(this, this);// tạo map event overlay
+            if (map != null) {// add thêm la bàn vào
+                mCompassOverlay = new CompassOverlay(context, new InternalCompassOrientationProvider(context), map);
                 mCompassOverlay.enableCompass();
             }
+            mScaleBarOverlay = new ScaleBarOverlay(context); // thanh scale trên bản đồ
+            mScaleBarOverlay.setCentred(true);
+            mScaleBarOverlay.setScaleBarOffset(dm.widthPixels / 2, 10);
+            if (map != null) {
+                mMinimapOverlay = new MinimapOverlay(context, map.getTileRequestCompleteHandler());
+                mMinimapOverlay.setWidth(dm.widthPixels / 5);
+                mMinimapOverlay.setHeight(dm.heightPixels / 5);
+            }
 
-            if (mCompassOverlay != null)
-                map.getOverlays().add(mCompassOverlay);
+            
             // Check if we were successful in obtaining the map.
             if (map != null) {
                 setUpMap();
             }
+
             // control the map
             mapController = map.getController();
             if (mapController != null) {
@@ -647,6 +659,25 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         map.setMultiTouchControls(true);
         hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
         endMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
+
+        // add overlay vào map: event, la bàn, thanh scale, bản đồ mini, here map, endmap
+        mapOverlay.add(0, mapEventsOverlay); // add cái event này vào overlay trên map ở vị trí cuối cùng
+        if (mCompassOverlay != null)
+            mapOverlay.add(mCompassOverlay);
+        mapOverlay.add(mScaleBarOverlay);
+        mapOverlay.add(mMinimapOverlay);
+
+        hereMarker.setPosition(herePoint);
+        hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
+        hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`
+        hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here3));
+        mapOverlay.add(hereMarker); // dan' vao map
+
+        endMarker.setPosition(endPoint);
+        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
+        endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
+        endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
+        mapOverlay.add(endMarker);
     }
 
     /**
@@ -654,8 +685,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      */
     private void controlMap() { 
         mapController.setZoom(15);
-        GeoPoint firstStartPoint = new GeoPoint(firstLat, firstLong);
-        mapController.setCenter(firstStartPoint);
+        mapController.setCenter(herePoint);
     }
 
     /**
@@ -677,20 +707,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      */
     @Override
     public boolean longPressHelper(GeoPoint p) {
-        map.getOverlays().clear();
-
-        map.getOverlays().add(0, mapEventsOverlay);
-        if (mCompassOverlay != null)
-            map.getOverlays().add(mCompassOverlay);
-
-        map.getOverlays().add(hereMarker);
-
         endMarker.setPosition(p);
         endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
         endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
         endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
 
-        map.getOverlays().add(endMarker);
+        if (mapOverlay.contains(endMarker))
+            mapOverlay.remove(endMarker); // xóa endmarker cũ
+        mapOverlay.add(endMarker); // add endmarker mới
 
         endPoint = p;
 
@@ -706,10 +730,11 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (urlForDirections != null) {
             new connectAsyncTask(urlForDirections).execute();
         }
-
         map.invalidate();
         return true;
     }
+
+
     //////////////////////////////////////////////////////////////////
     /////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////
@@ -1034,9 +1059,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         RoadManager roadManager = new OSRMRoadManager();
         Road road = roadManager.getRoad(waypoints);  // vẽ đường đi nối các điểm lại với nhau  --> cũng nhờ server vẽ hộ
         //Polyline roadOverlay = RoadManager.buildRoadOverlay(road, MapsActivity.this); // hàm vẽ mình tự lập trình
-        Polyline roadOverlay = RoadManager.buildRoadOverlay(road, 0x80000080, 11.0f, MapsActivity.this); // hàm vẽ mình tự lập trình
 
-        map.getOverlays().add(roadOverlay);
+        if (roadOverlay != null)
+            mapOverlay.remove(roadOverlay);
+
+        roadOverlay = RoadManager.buildRoadOverlay(road, 0x80000080, 11.0f, context); // hàm vẽ mình tự lập trình
+        mapOverlay.add(roadOverlay);
+        if (mapOverlay.contains(mMinimapOverlay))
+            mapOverlay.remove(mMinimapOverlay);
+        mapOverlay.add(mMinimapOverlay);
+        
         map.invalidate();
     }
 
