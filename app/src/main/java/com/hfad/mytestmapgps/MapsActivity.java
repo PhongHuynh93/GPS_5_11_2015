@@ -7,6 +7,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 
+import android.graphics.drawable.Drawable;
 import android.location.Geocoder;
 import android.location.Location;
 
@@ -36,6 +37,7 @@ import com.google.android.gms.maps.SupportMapFragment;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.osmdroid.api.IMapController;
+import org.osmdroid.bonuspack.overlays.FolderOverlay;
 import org.osmdroid.bonuspack.overlays.MapEventsOverlay;
 import org.osmdroid.bonuspack.overlays.MapEventsReceiver;
 import org.osmdroid.bonuspack.overlays.Marker;
@@ -43,6 +45,7 @@ import org.osmdroid.bonuspack.overlays.Polyline;
 import org.osmdroid.bonuspack.routing.OSRMRoadManager;
 import org.osmdroid.bonuspack.routing.Road;
 import org.osmdroid.bonuspack.routing.RoadManager;
+import org.osmdroid.bonuspack.routing.RoadNode;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
@@ -139,6 +142,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private MinimapOverlay mMinimapOverlay;
     // con duong
     private Polyline roadOverlay;
+    // bang? chi? duong
+    private FolderOverlay roadMarkers;
+    // icon chi? duong
+    private Drawable nodeIcon;
+    private Drawable iconContinue;
+
     private IMapController mapController;
     private GeoPoint herePoint;
     private GeoPoint endPoint;
@@ -284,6 +293,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 
         // context
         context = this.getApplicationContext();
+
+
         
         // xây dựng Google Client có chức năng access vị trí 
         buildGoogleApiClient();
@@ -630,11 +641,26 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             mScaleBarOverlay = new ScaleBarOverlay(context); // thanh scale trên bản đồ
             mScaleBarOverlay.setCentred(true);
             mScaleBarOverlay.setScaleBarOffset(dm.widthPixels / 2, 10);
-            if (map != null) {
+            if (map != null) { // tao ban do nho?
                 mMinimapOverlay = new MinimapOverlay(context, map.getTileRequestCompleteHandler());
                 mMinimapOverlay.setWidth(dm.widthPixels / 5);
                 mMinimapOverlay.setHeight(dm.heightPixels / 5);
             }
+
+            // khai bien? bao chi? dan~ duong di
+            if (roadMarkers == null) {
+                roadMarkers = new FolderOverlay(this);
+            }
+
+            // icon huon'g dan~
+            if (nodeIcon == null) {
+                nodeIcon = ContextCompat.getDrawable(context, R.drawable.marker_node);
+            }
+
+            if (iconContinue == null) {
+                iconContinue = ContextCompat.getDrawable(context, R.drawable.ic_continue);
+            }
+
 
             
             // Check if we were successful in obtaining the map.
@@ -678,6 +704,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         endMarker.setTitle("Destination"); // click vao startMaker se~ hien. chu~ nay`
         endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
         mapOverlay.add(endMarker);
+
+        mapOverlay.add(roadMarkers);         // add chi? duong
     }
 
     /**
@@ -1048,6 +1076,14 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             for (int z = 0; z < list.size() - 1; z++) {
                 GeoPoint src = list.get(z);
                 waypoints.add(src);
+                /*
+                // ve~ cac marker giua~ cac node
+                Marker nodeMarker = new Marker(map);
+                nodeMarker.setPosition(src);
+                nodeMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+                nodeMarker.setIcon(ContextCompat.getDrawable(this, R.drawable.marker_node));
+                mapOverlay.add(nodeMarker);
+                */
             }
 
         } catch (Exception e) {
@@ -1055,6 +1091,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         }
 
         waypoints.add(endPoint); // add điểm cuối
+
 
         RoadManager roadManager = new OSRMRoadManager();
         Road road = roadManager.getRoad(waypoints);  // vẽ đường đi nối các điểm lại với nhau  --> cũng nhờ server vẽ hộ
@@ -1068,7 +1105,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (mapOverlay.contains(mMinimapOverlay))
             mapOverlay.remove(mMinimapOverlay);
         mapOverlay.add(mMinimapOverlay);
-        
+
         map.invalidate();
     }
 
