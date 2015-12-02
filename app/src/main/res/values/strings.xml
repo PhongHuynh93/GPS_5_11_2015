@@ -22,6 +22,9 @@
     <string name="address_found">Address found</string>
     <!-- when you can't get an address of a location -->
     <string name="no_geocoder_available">No geocoder available</string>
+    <!-- marker hành trình -->
+    <string name="itinerary_markers_title">Route Via-Points</string>
+
 
 
 </resources>

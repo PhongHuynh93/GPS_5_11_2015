@@ -7,10 +7,13 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 
+import android.content.SharedPreferences;
 import android.graphics.drawable.Drawable;
+import android.hardware.SensorEventListener;
 import android.location.Geocoder;
 import android.location.Location;
 
+import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -20,6 +23,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -47,8 +51,10 @@ import org.osmdroid.bonuspack.routing.Road;
 import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.bonuspack.routing.RoadNode;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
+import org.osmdroid.tileprovider.util.ManifestUtil;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
+import org.osmdroid.views.overlay.DirectedLocationOverlay;
 import org.osmdroid.views.overlay.MinimapOverlay;
 import org.osmdroid.views.overlay.Overlay;
 import org.osmdroid.views.overlay.ScaleBarOverlay;
@@ -67,6 +73,7 @@ import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.jar.Manifest;
 
 // AppCompatActivity: chứa Fragment API, mà ta sử dụng Map thuộc dạng Fragment 
 /**
@@ -142,17 +149,57 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private MinimapOverlay mMinimapOverlay;
     // con duong
     private Polyline roadOverlay;
-    // bang? chi? duong
-    private FolderOverlay roadMarkers;
+
     // icon chi? duong
     private Drawable nodeIcon;
     private Drawable iconContinue;
 
+    // tủ nhét đồ
+    private SharedPreferences prefs;
+
+    // đây là marker chỉ vị trí của mình, sẽ tự xoay hình khi ta quẹo.
+    private DirectedLocationOverlay myLocationOverlay = null;
+
+    // start: vị trí mà ta muốn bắt đầu đi
+    // destination: vi trí mà ta muốn đến
+    // prevLocation: điểm GPS trong quá khứ (giúp tính speed và hướng)
+    // newLocation: điểm GPS hiện tại  (giúp tính speed và hướng)
+    // tương ưng 2 điểm trên ta có 2 markers
+    // điểm trung gian nếu ta muốn dẫn đường qua những điểm trung gian này
+    private GeoPoint startPoint = null;
+    private GeoPoint destinationPoint = null;
+    private GeoPoint prevLocation = null;
+    private GeoPoint newLocation = null;
+    private double mSpeed = 0.0; // speed tính được nhờ quá khứ và hiện tại GPS
+    private float mAzimuthAngleSpeed = 0.0f; // tiên đoán hướng xoay dựa vào tốc độ GPS
+
+    private Marker markerStart = null;
+    private Marker markerDestination = null;
+    private ArrayList<GeoPoint> viaPoints = null;
+    private static int START_INDEX = -2;
+    private static int DEST_INDEX = -1;
+
+    // các marker hành trình
+    private FolderOverlay mItineraryMarkers = null;
+
+    // cửa sổ hướng dẫn đường
+    private ViaPointInfoWindow mViaPointInfoWindow = null;
+
+    // thiết lập tham số cho bản đồ
     private IMapController mapController;
+
+    // here: vị trí GPS hiện tại update theo thời gian thực dựa vào tọa độ GPS
+    // end: vị trí ta chọn trước 
     private GeoPoint herePoint;
     private GeoPoint endPoint;
     private Marker hereMarker;
     private Marker endMarker;
+
+    // nút track trong bản đồ, và biến theo dõi trang thái nhấn hay ko
+    private Button mTrackingModeButton;
+    private boolean mTrackingMode = false; // lúc đầu là chế độ ko track
+
+    // overlay sự kiện (touch short và touch long)
     private MapEventsOverlay mapEventsOverlay;
     // Biến App cua mình thành google client (đã xin mẹ chức năng access location)
     private GoogleApiClient mGoogleApiClient; 
@@ -178,6 +225,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     // identify GPS turn on or off ?
     private boolean has_GPS_on = false;
     private boolean first_center_map = true; // chi? center map lan dau tien khi ket noi' toi' wifi
+
+    static String graphHopperApiKey;
+    static String mapQuestApiKey;
+    static String flickrApiKey;
+    static String geonamesAccount;
+
+    //////////////////////////////////////////////////////////////////////
+    // sử dụng thư viên osmdroid để nghe tín hiệu GPS chứ ko nhờ google //
+    //////////////////////////////////////////////////////////////////////
+    private LocationManager mLocationManager = null;
 
     //////////////////////
     // Route giữa 2 máy //
@@ -219,12 +276,17 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	////////////////////////////////////////////////////
 	// Keys for storing activity state in the Bundle. //
 	////////////////////////////////////////////////////
-	protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
-	
+    protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
     protected final static String LOCATION_KEY                    = "location-key"; // lưu location hiện tại của người dùng 
-	protected final static String LAST_UPDATED_TIME_STRING_KEY    = "last-updated-time-string-key";
-	protected static final String LOCATION_ADDRESS_KEY            = "location-address";
-	protected static final String ADDRESS_REQUESTED_KEY           = "address-request-pending"; // true la` da~ nhan' nut' lay dia chi 
+    protected final static String LAST_UPDATED_TIME_STRING_KEY    = "last-updated-time-string-key";
+    protected static final String LOCATION_ADDRESS_KEY            = "location-address";
+    protected static final String ADDRESS_REQUESTED_KEY           = "address-request-pending"; // true la` da~ nhan' nut' lay dia chi
+    protected static final String START_POINT_KEY                 = "start";
+    protected static final String DEST_POINT_KEY                  = "destination";
+    protected static final String VIA_POINT_KEY                   = "viapoints";
+    protected static final String TRACKING_MODE_KEY               = "tracking_mode";
+
+
 	
 	/////////////////////////////////////
 	// Attribute for location updates  //
@@ -238,6 +300,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * To avoid executing the code in onConnectionFailed() while a previous attempt to resolve an error is ongoing, you need to retain a boolean that tracks whether your app is already attempting to resolve an error.
      * To keep track of the boolean across activity restarts (such as when the user rotates the screen), save the boolean in the activity's saved instance data using onSaveInstanceState():
      * Your app must therefore store any information it needs to recreate the activity. 
+     * 
+     * Hàm này sẽ được gọi trước khi Activity của ta bị phá hủy, dùng để lưu các thông tin quan trọng để phục hồi lại 1 Activity lúc ban đầu 
      * @param savedInstanceState [description]
      */
     @Override
@@ -288,14 +352,22 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         
         // endPoint to route between my location to there
         endPoint = new GeoPoint(10.758097, 106.659147);
+        
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
 
         // context
         context = this.getApplicationContext();
 
+        // api key
+        graphHopperApiKey = ManifestUtil.retrieveKey(context,  "GRAPHHOPPER_API_KEY");
+        mapQuestApiKey = ManifestUtil.retrieveKey(this, "MAPQUEST_API_KEY");
+        flickrApiKey = ManifestUtil.retrieveKey(this, "FLICKR_API_KEY");
+        geonamesAccount = ManifestUtil.retrieveKey(this, "GEONAMES_ACCOUNT");
 
-        
+        // cái tủ nhét đồ
+        prefs = getSharedPreferences("OSMNAVIGATOR", MODE_PRIVATE);
+
         // xây dựng Google Client có chức năng access vị trí 
         buildGoogleApiClient();
 
@@ -397,6 +469,27 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             if (savedInstanceState.keySet().contains(ADDRESS_REQUESTED_KEY)) {
                 mAddressRequested = savedInstanceState.getBoolean(ADDRESS_REQUESTED_KEY);
             }
+
+            // lấy tọa độ điểm đi
+            if (savedInstanceState.keySet().contains(START_POINT_KEY)) {
+                startPoint = savedInstanceState.getParcelable(START_POINT_KEY);
+            }
+
+            // lấy tọa độ điểm đến
+            if (savedInstanceState.keySet().contains(DEST_POINT_KEY)) {
+                destinationPoint = savedInstanceState.getParcelable(DEST_POINT_KEY);
+            }
+
+            // lấy tọa độ các điểm trung gian
+            if (savedInstanceState.keySet().contains(VIA_POINT_KEY)) {
+                viaPoints = savedInstanceState.getParcelableArrayList(VIA_POINT_KEY);
+            }
+
+            // lấy tracking mode
+            if (savedInstanceState.keySet().contains(TRACKING_MODE_KEY)) {
+                mTrackingMode = savedInstanceState.getBoolean(TRACKING_MODE_KEY);
+                updateUIWithTrackingMode();
+            }
             updateUI(); // output old long and latitude 
         }
     }
@@ -443,6 +536,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (mCurrentLocation == null) {
             showToast("Bạn vui lòng bật GPS để xác định vị trí");
             has_GPS_on = false;
+            // do chưa có GPS nên ko hiện marker vị trí hiện tại của mình
+            myLocationOverlay.setEnabled(false);
         }
 
         //  The location object returned may be null in rare cases when the location is not available. --> check first
@@ -520,13 +615,46 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	@Override
     public void onLocationChanged(Location location) {
         mCurrentLocation = location;
-        
-        if (mCurrentLocation != null) 
+
+        if (mCurrentLocation != null){
             has_GPS_on = true;
+            newLocation = new GeoPoint(mCurrentLocation);
+        }
+
+        // nếu mà myLocation chưa bật lên thì bật nó lên
+        if (!myLocationOverlay.isEnabled()) {
+            myLocationOverlay.setEnabled(true);
+        }
+
+        // nếu myLocation khác null
+        if (myLocationOverlay != null)
+            prevLocation = myLocationOverlay.getLocation();
+
+        myLocationOverlay.setLocation(newLocation); // dịch marker tương ứng
+        myLocationOverlay.setAccuracy((int)mCurrentLocation.getAccuracy());
+
+        // prevL = null khi lúc đầu mới biết địa chỉ GPS --> lúc đầu speed = 0 tên khỏi tính
+        if (prevLocation != null && mCurrentLocation.getProvider().equals(LocationManager.GPS_PROVIDER)) {
+            mSpeed = mCurrentLocation.getSpeed() * 3.6;
+            //long speedInt = Math.round(mSpeed);
+            // xuất ra màn hình speed của xe
+
+            if (mSpeed >= 0.1) {
+                mAzimuthAngleSpeed = mCurrentLocation.getBearing();
+                myLocationOverlay.setBearing(mAzimuthAngleSpeed);
+            }
+        }
+
+        // bật và ko bật chế độ Tracking
+        if (mTrackingMode) {
+            map.setMapOrientation(-mAzimuthAngleSpeed); // xoay map dựa vào góc
+            mapController.animateTo(newLocation);
+        }
+        // ko bật thì ko làm gì hết
 
         // marker, if location change then update marker + draw route again
         herePoint = new GeoPoint(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        // dat. ban do` tai vi. tri' hien. tai cua? minh` 
+        // dat. ban do` tai vi. tri' hien. tai cua? minh` chỉ lần đầu tiên mới center, các lần sau ko dc tự ý center
         if (has_GPS_on && first_center_map) {
             first_center_map = false;
             mapController.setCenter(herePoint);
@@ -540,7 +668,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 
         if (mapOverlay.contains(hereMarker))
             mapOverlay.remove(hereMarker); // xóa cái here marker cũ
-        mapOverlay.add(hereMarker); // dán cái here marker mới 
+        //mapOverlay.add(hereMarker); // dán cái here marker mới 
 
         
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
@@ -558,15 +686,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             new connectAsyncTask(urlForDirections).execute();
         }
 
-        if (mapOverlay.contains(hereMarker)) {
-            mapOverlay.remove(hereMarker);
-        }
-        // add hereMarker
-        mapOverlay.add(hereMarker);
         map.invalidate();
         updateUI();
     }
 
+    // ?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+    // phải thêm vào vẽ các marker start, end, via point nữa do ta đã phục hồi được giá trị của nó 
     private void updateUI() {
         text_lat.setText(String.valueOf(mCurrentLocation.getLatitude()));
         text_long.setText(String.valueOf(mCurrentLocation.getLongitude()));
@@ -647,11 +772,6 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 mMinimapOverlay.setHeight(dm.heightPixels / 5);
             }
 
-            // khai bien? bao chi? dan~ duong di
-            if (roadMarkers == null) {
-                roadMarkers = new FolderOverlay(this);
-            }
-
             // icon huon'g dan~
             if (nodeIcon == null) {
                 nodeIcon = ContextCompat.getDrawable(context, R.drawable.marker_node);
@@ -661,8 +781,33 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 iconContinue = ContextCompat.getDrawable(context, R.drawable.ic_continue);
             }
 
+            // chỉ đường
+            if (myLocationOverlay == null) {
+                myLocationOverlay = new DirectedLocationOverlay(context);
 
-            
+            }
+
+            // diem tung gian
+            if (viaPoints == null) {
+                viaPoints = new ArrayList<GeoPoint>();
+            }
+
+            // marker hành trình
+            if (mItineraryMarkers == null) {
+                mItineraryMarkers = new FolderOverlay(context);
+                mItineraryMarkers.setName(getString(R.string.itinerary_markers_title));
+            }
+
+            // cửa sổ marker hành trình
+            if (mViaPointInfoWindow == null) {
+                mViaPointInfoWindow = new ViaPointInfoWindow(R.layout.itinerary_bubble, map);
+            }
+
+            // nút tracking
+            if (mTrackingModeButton == null) {
+                mTrackingModeButton = (Button)findViewById(R.id.buttonTrackingMode);
+            }
+
             // Check if we were successful in obtaining the map.
             if (map != null) {
                 setUpMap();
@@ -674,6 +819,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 controlMap();
             }
 
+            // location manager
+            if (mLocationManager == null) {
+                mLocationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
+            }
+
+            // gọi hàm này để vẽ 3 marker là startPoint, destPoint, va viaPoint nếu như đã có rồi
+            updateUIWithItineraryMarkers();
         }
     }
 
@@ -682,12 +834,20 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * just add a marker near Africa.
      */
     private void setUpMap() {
+        //map.setBuiltInZoomControls((true)); // thêm thanh zoom cho map
         map.setMultiTouchControls(true);
         hereMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
         endMarker = new Marker(map); // khai bao' marker xac dinh. vi tri' hien. tai. cua chung ta
 
-        // add overlay vào map: event, la bàn, thanh scale, bản đồ mini, here map, endmap
+        // add overlay vào map: event, chỉ đường, marker hành trình, la bàn, thanh scale, bản đồ mini, here map, endmap
         mapOverlay.add(0, mapEventsOverlay); // add cái event này vào overlay trên map ở vị trí cuối cùng
+        if (myLocationOverlay != null) {
+            mapOverlay.add(myLocationOverlay);
+            //myLocationOverlay.setEnabled(false); // không bật chỉ đường theo thời gian thực
+        }
+        if (mItineraryMarkers != null) {
+            mapOverlay.add(mItineraryMarkers);
+        }
         if (mCompassOverlay != null)
             mapOverlay.add(mCompassOverlay);
         mapOverlay.add(mScaleBarOverlay);
@@ -697,7 +857,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         hereMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
         hereMarker.setTitle("My location"); // click vao startMaker se~ hien. chu~ nay`
         hereMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here3));
-        mapOverlay.add(hereMarker); // dan' vao map
+        //mapOverlay.add(hereMarker); // dan' vao map
 
         endMarker.setPosition(endPoint);
         endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM); // dat. ngon' tay tai. ngay vi. tri diem startpoint, nam` tren diem? do'
@@ -705,15 +865,26 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
         mapOverlay.add(endMarker);
 
-        mapOverlay.add(roadMarkers);         // add chi? duong
+        // listen cái nút tracking xem nó có được nhấn ko
+        if (mTrackingModeButton != null) {
+            mTrackingModeButton.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View view) {
+                    mTrackingMode = !mTrackingMode; // khi nhấn thì thay đổi giữa co nhấn hay ko
+                    updateUIWithTrackingMode();
+                }
+            });
+        }
+
     }
 
     /**
      * Nếu chưa tìm được thì nó zoom 15 và set tọa độ 0, 0 để load map 
      */
     private void controlMap() { 
-        mapController.setZoom(15);
-        mapController.setCenter(herePoint);
+        mapController.setZoom(prefs.getInt("MAP_ZOOM_LEVEL", 15)); // lấy giá trị trong tủ để làm giá tr zoom
+        //mapController.setCenter(herePoint); // lấy giá trị trong tủ là vị trí center của map trước khi Application bị phá hủy
+        mapController.setCenter(new GeoPoint( (double)prefs.getFloat("MAP_CENTER_LAT", (float)herePoint.getLatitude()),
+                (double)prefs.getFloat("MAP_CENTER_LON", (float)herePoint.getLongitude()) ));
     }
 
     /**
@@ -1145,6 +1316,55 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         }
 
         return poly;
+    }
+
+
+    /**
+     * Hàm xóa cái bảng thông báo dẫn đường đi 
+     * @param index [description]
+     */
+    public void removePoint(int index) {
+
+    }
+
+    /**
+     * hiển thị các marker nếu ta đã biết tọa độ đầu và tọa độ cuối 
+     */
+    public void updateUIWithItineraryMarkers() {
+        // start marker
+        if (startPoint != null) {
+
+        }
+
+        // viapoint
+        
+        // destination marker
+        if (destinationPoint != null) {
+
+        }
+    }
+
+    /**
+     * Hàm này sẽ update map dựa vào ta có nhấn nút tracking hay ko
+     */
+    public void updateUIWithTrackingMode() {
+        // nếu co nhấn
+        if (mTrackingMode) {
+            // load hình có nhấn
+            mTrackingModeButton.setBackgroundResource(R.drawable.btn_tracking_on);
+            mTrackingModeButton.setKeepScreenOn(true); // trong quá trình tìm đường thì không tắt màn hình
+            // nếu như có vi trí hiện tại của ta mới center ngay tại map
+            if (myLocationOverlay.isEnabled() && myLocationOverlay.getLocation() != null) {
+                mapController.animateTo(myLocationOverlay.getLocation());
+            }
+            map.setMapOrientation(-mAzimuthAngleSpeed);
+        }
+        // nếu ko nhấn, load hình, xoay map lại ban đầu, tắt màn hình
+        else {
+            mTrackingModeButton.setBackgroundResource(R.drawable.btn_tracking_off);
+            map.setMapOrientation(0.0f);
+            mTrackingModeButton.setKeepScreenOn(false);
+        }
     }
 
 }

@@ -34,7 +34,18 @@
         <meta-data
             android:name="com.google.android.maps.v2.API_KEY"
             android:value="@string/google_maps_key" />
-
+        <meta-data
+            android:name="GRAPHHOPPER_API_KEY"
+            android:value="3e9586a0-2a0b-4f3f-a081-365d4dadd0b0"/>
+        <meta-data
+            android:name="MAPQUEST_API_KEY"
+            android:value="xROp12Z8UGXeiitr5POqYVos4vKY6qvC"/>
+        <meta-data
+            android:name="FLICKR_API_KEY"
+            android:value="4ee7fded134e58e9d86416a14b525c78"/>
+        <meta-data
+            android:name="GEONAMES_ACCOUNT"
+            android:value="p7157568"/>
 
         <activity
             android:name=".MapsActivity"

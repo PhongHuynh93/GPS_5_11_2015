@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Đây là layout đại diện cho cái khung hướng dẫn hành trình
+khi ta click vào 1 marker-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bonuspack_bubble_black">
+
+    <!-- -->
+    <!-- Load hình rẽ trái hay phải -->
+    <ImageView
+        android:layout_width="65dp"
+        android:layout_height="65dp"
+        android:id = "@+id/bubble_image"
+        android:paddingLeft="5dp"
+        android:visibility="gone" />
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation = "vertical">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" >
+
+            <!-- Tiêu đề: là marker nào (đầu, đích, viapoint)-->
+            <TextView android:id="@+id/bubble_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:maxEms="17"
+                android:text="Title" />
+        </LinearLayout>
+
+        <!-- Nội dung: chỉ đường -->
+        <TextView android:id="@+id/bubble_description"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="12dp"
+            android:maxEms="17"
+            android:text="Description" />
+
+        <!-- Nội dung: còn bao nhiêu mét, thời gian -->
+        <TextView android:id="@+id/bubble_subdescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="10dp"
+            android:maxEms="17"
+            android:text="Address"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- load hình nút x đỏ -->
+    <Button android:id="@+id/bubble_delete"
+        android:background="@drawable/btn_delete"
+        android:visibility="visible"
+        android:layout_width="25dp"
+        android:layout_height="25dp"
+        android:layout_gravity="right" />
+
+</LinearLayout>

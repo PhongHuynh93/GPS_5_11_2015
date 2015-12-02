@@ -61,6 +61,15 @@
         android:layout_alignParentStart="true"
         android:textSize="@dimen/default_text_size"/>
 
+    <!-- cái nút tracking -->
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id = "@+id/buttonTrackingMode"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentBottom="true"
+        android:background="@drawable/btn_tracking_off"/>
+
 
 </RelativeLayout>
 
