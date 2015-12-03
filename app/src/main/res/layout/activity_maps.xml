@@ -1,75 +1,189 @@
-<RelativeLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     tools:context=".MapsActivity"
+    android:orientation="vertical"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <!-- Fragment này là "Map" chiếm toàn màn hình -->
-    <org.osmdroid.views.MapView android:id="@+id/map"
+    android:layout_height="match_parent"
+    android:id="@+id/mainLayout"
+    android:focusableInTouchMode="true">
+    <!-- /////////////////////////////////////////////////////////////-->
+    <!-- -->
+    <!-- 3 thanh search + autocomplete -->
+    <!-- 3 ô điền address và button search -->
+    <LinearLayout
+        android:id="@+id/search_panel"
         android:layout_width="fill_parent"
-        android:layout_height="fill_parent" />
-
-    <!-- Show latitude -->
-    <TextView
-        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/text1"
-        android:id="@+id/textView"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentStart="true" />
+        android:orientation="vertical" >
 
-    <!-- Show Longtitude -->
-    <TextView
-        android:layout_width="wrap_content"
+        <!-- ô điền address và button search điểm khởi hành-->
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" >
+            <com.hfad.mytestmapgps.AutoCompleteOnPreferences
+                android:id="@+id/editDeparture"
+                android:hint="@string/my_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="left"
+                android:layout_weight="1"
+                android:completionThreshold="1" />
+            <Button
+                android:id="@+id/buttonSearchDep"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="right"
+                android:layout_weight="0"
+                android:text="@string/search" />
+        </LinearLayout>
+
+        <!-- ô điền address và button search điểm đến -->
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" >
+            <com.hfad.mytestmapgps.AutoCompleteOnPreferences
+                android:id="@+id/editDestination"
+                android:hint="@string/destination"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="left"
+                android:layout_weight="1"
+                android:completionThreshold="1" />
+            <Button
+                android:id="@+id/buttonSearchDest"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="right"
+                android:layout_weight="0"
+                android:text="@string/search" />
+        </LinearLayout>
+
+        <!-- ô điền address và button search -->
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" >
+            <AutoCompleteTextView
+                android:id="@+id/poiTag"
+                android:hint="@string/feature"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="left"
+                android:completionThreshold="1"/>
+            <Button
+                android:id="@+id/buttonSetPOITag"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="right"
+                android:layout_weight="0"
+                android:text="@string/search" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- /////////////////////////////////////////////////////////////-->
+    <!-- Ô phóng to thu nhỏ cửa sổ search -->
+    <LinearLayout
+        android:id="@+id/expander"
+        android:layout_width="fill_parent"
         android:layout_height="wrap_content"
-        android:text="@string/text2"
-        android:id="@+id/textView2"
-        android:layout_below="@+id/textView"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentStart="true" />
-
-    <!-- Show time -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/text3"
-        android:id="@+id/textView3"
-        android:layout_below="@+id/textView2"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentStart="true" />
-
-    <!-- click get address-->
-    <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/fetch_address"
-        android:id="@+id/fetch_address_button"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:onClick="fetchAddressButtonHandler"/>
-
-    <!-- Show address -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/address"
-        android:id="@+id/location_address_view"
-        android:layout_below="@+id/textView3"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentStart="true"
-        android:textSize="@dimen/default_text_size"/>
-
-    <!-- cái nút tracking -->
-    <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id = "@+id/buttonTrackingMode"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentBottom="true"
-        android:background="@drawable/btn_tracking_off"/>
+        android:orientation="horizontal"
+        android:background="@drawable/expander_bgrnd" >
+        <!-- ô route info -->
+        <TextView
+            android:id="@+id/routeInfo"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="left"
+            android:textColor="#FF000000"
+            android:textSize="20dp" />
+        <!-- ô speed -->
+        <TextView
+            android:id="@+id/speed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0"
+            android:layout_gravity="right"
+            android:textColor="#FF000000"
+            android:textSize="20dp" />
+    </LinearLayout>
 
 
-</RelativeLayout>
+    <!-- /////////////////////////////////////////////////////////////-->
+    <!-- Bản đồ cũng như các textview xuất ra tọa độ và nút getAddress-->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Fragment này là "Map" chiếm toàn màn hình -->
+        <org.osmdroid.views.MapView android:id="@+id/map"
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent" />
+
+        <!-- Show latitude -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/text1"
+            android:id="@+id/textView"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentStart="true" />
+
+        <!-- Show Longtitude -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/text2"
+            android:id="@+id/textView2"
+            android:layout_below="@+id/textView"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentStart="true" />
+
+        <!-- Show time -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/text3"
+            android:id="@+id/textView3"
+            android:layout_below="@+id/textView2"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentStart="true" />
+
+        <!-- click get address-->
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/fetch_address"
+            android:id="@+id/fetch_address_button"
+            android:layout_alignParentBottom="true"
+            android:layout_centerHorizontal="true"
+            android:onClick="fetchAddressButtonHandler"/>
+
+        <!-- Show address -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/address"
+            android:id="@+id/location_address_view"
+            android:layout_below="@+id/textView3"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentStart="true"
+            android:textSize="@dimen/default_text_size"/>
+
+        <!-- cái nút tracking -->
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:id = "@+id/buttonTrackingMode"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentBottom="true"
+            android:background="@drawable/btn_tracking_off"/>
+    </RelativeLayout>
+
+</LinearLayout>
 

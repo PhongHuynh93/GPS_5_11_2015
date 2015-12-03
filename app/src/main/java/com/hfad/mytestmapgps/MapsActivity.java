@@ -8,8 +8,16 @@ import android.content.Intent;
 import android.content.IntentSender;
 
 import android.content.SharedPreferences;
+import android.content.res.TypedArray;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.DashPathEffect;
+import android.graphics.Paint;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.hardware.SensorEventListener;
+import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
 
@@ -23,7 +31,10 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -41,17 +52,31 @@ import com.google.android.gms.maps.SupportMapFragment;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.osmdroid.api.IMapController;
+import org.osmdroid.bonuspack.clustering.RadiusMarkerClusterer;
+import org.osmdroid.bonuspack.location.FlickrPOIProvider;
+import org.osmdroid.bonuspack.location.GeoNamesPOIProvider;
+import org.osmdroid.bonuspack.location.GeocoderNominatim;
+import org.osmdroid.bonuspack.location.OverpassAPIProvider;
+import org.osmdroid.bonuspack.location.POI;
+import org.osmdroid.bonuspack.location.PicasaPOIProvider;
+import org.osmdroid.bonuspack.overlays.BasicInfoWindow;
 import org.osmdroid.bonuspack.overlays.FolderOverlay;
 import org.osmdroid.bonuspack.overlays.MapEventsOverlay;
 import org.osmdroid.bonuspack.overlays.MapEventsReceiver;
 import org.osmdroid.bonuspack.overlays.Marker;
+import org.osmdroid.bonuspack.overlays.MarkerInfoWindow;
+import org.osmdroid.bonuspack.overlays.Polygon;
 import org.osmdroid.bonuspack.overlays.Polyline;
+import org.osmdroid.bonuspack.routing.GoogleRoadManager;
+import org.osmdroid.bonuspack.routing.GraphHopperRoadManager;
 import org.osmdroid.bonuspack.routing.OSRMRoadManager;
 import org.osmdroid.bonuspack.routing.Road;
 import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.bonuspack.routing.RoadNode;
+import org.osmdroid.bonuspack.utils.BonusPackHelper;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.tileprovider.util.ManifestUtil;
+import org.osmdroid.util.BoundingBoxE6;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.DirectedLocationOverlay;
@@ -72,7 +97,11 @@ import java.net.URL;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.jar.Manifest;
 
 // AppCompatActivity: chứa Fragment API, mà ta sử dụng Map thuộc dạng Fragment 
@@ -160,6 +189,15 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     // đây là marker chỉ vị trí của mình, sẽ tự xoay hình khi ta quẹo.
     private DirectedLocationOverlay myLocationOverlay = null;
 
+    // biến lắng nghe khi người dùng nhân vào marker
+    private OnItineraryMarkerDragListener mItineraryListener = null;
+
+    // biến lưu tất cả con đường
+    public static Road[] mRoads = null;
+
+    static final String userAgent = "OsmNavigator/1.0";
+
+
     // start: vị trí mà ta muốn bắt đầu đi
     // destination: vi trí mà ta muốn đến
     // prevLocation: điểm GPS trong quá khứ (giúp tính speed và hướng)
@@ -176,11 +214,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private Marker markerStart = null;
     private Marker markerDestination = null;
     private ArrayList<GeoPoint> viaPoints = null;
-    private static int START_INDEX = -2;
-    private static int DEST_INDEX = -1;
+    
 
     // các marker hành trình
     private FolderOverlay mItineraryMarkers = null;
+    private FolderOverlay mRoadNodeMarkers = null; // đường đi
+    private Polyline[] mRoadOverlays = null;
 
     // cửa sổ hướng dẫn đường
     private ViaPointInfoWindow mViaPointInfoWindow = null;
@@ -199,6 +238,22 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private Button mTrackingModeButton;
     private boolean mTrackingMode = false; // lúc đầu là chế độ ko track
 
+    // 3 ô autocomplete và 3 nút search
+    private AutoCompleteOnPreferences departureText = null;
+    private Button searchDepButton = null;
+
+    private AutoCompleteOnPreferences destinationText = null;
+    private Button searchDestButton = null;
+
+    private AutoCompleteTextView poiTagText;
+    private RadiusMarkerClusterer mPoiMarkers;
+    public static ArrayList<POI> mPOIs;
+    private ExecutorService mThreadPool = Executors.newFixedThreadPool(3);
+
+    private Polygon mDestinationPolygon;
+
+    private int mSelectedRoad; // biến lưu trữ ta đang chọn nhánh đường nào khi map đã vẽ đường
+
     // overlay sự kiện (touch short và touch long)
     private MapEventsOverlay mapEventsOverlay;
     // Biến App cua mình thành google client (đã xin mẹ chức năng access location)
@@ -207,10 +262,11 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private Location mCurrentLocation;
     // To store parameters for requests to the fused location provider, create a LocationRequest. The parameters determine the levels of accuracy requested.
     private LocationRequest mLocationRequest;
-    // 3 textView to store latitude and longtitude and time
+    // 3 textView to store latitude and longtitude and time, 1 ô editText đẻ ta gõ điểm di/ đến cần search
     private TextView text_lat;
     private TextView text_long;
     private TextView text_time;
+
     // context
     private Context context;
 
@@ -286,7 +342,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     protected static final String VIA_POINT_KEY                   = "viapoints";
     protected static final String TRACKING_MODE_KEY               = "tracking_mode";
 
+    // Keys để lưu trữ các chữ đã đánh trong ô search vào database 
+    private static String SHARED_PREFS_APPKEY = "GPS_Android"; // xác định app gì cần lưu các chữ vào database
+    private static String PREF_LOCATION_KEY = "PREF_LOCATIONS"; // xác định tên cái tủ (database)
+    private static int START_INDEX = -2;
+    private static int DEST_INDEX = -1;
 
+    // Keys các tham số để tra road
+    private static final int OSRM=0, GRAPHHOPPER_FASTEST=1, GRAPHHOPPER_BICYCLE=2, GRAPHHOPPER_PEDESTRIAN=3, GOOGLE_FASTEST=4;
+    private int mWhichRouteProvider;
+    
 	
 	/////////////////////////////////////
 	// Attribute for location updates  //
@@ -808,6 +873,37 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 mTrackingModeButton = (Button)findViewById(R.id.buttonTrackingMode);
             }
 
+            // 3 nut autoComplete cùng 3 nut search
+            
+            if (departureText == null) {
+                departureText = (AutoCompleteOnPreferences)findViewById(R.id.editDeparture);
+            }
+            
+            if (searchDepButton == null) {
+                searchDepButton = (Button)findViewById(R.id.buttonSearchDep);
+
+            }
+            
+            if (destinationText == null) {
+                //destinationText = (AutoCompleteOnPreferences)findViewById(R.id.editDestination);
+            }
+            
+            if (searchDestButton == null) {
+                searchDestButton = (Button)findViewById(R.id.buttonSearchDest);
+            }
+
+            // khai báo listener nghe khi user click chuột
+            mItineraryListener = new OnItineraryMarkerDragListener();
+
+            // road overlay
+            if (mRoadNodeMarkers == null) {
+                mRoadNodeMarkers = new FolderOverlay(context);
+                mRoadNodeMarkers.setName("Route Steps");
+            }
+
+            // chọn nhà cung cấp dịch vụ tìm đường cho app của ta
+            mWhichRouteProvider = prefs.getInt("ROUTE_PROVIDER", OSRM);
+
             // Check if we were successful in obtaining the map.
             if (map != null) {
                 setUpMap();
@@ -865,6 +961,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         endMarker.setIcon(ContextCompat.getDrawable(this, R.mipmap.here2));
         mapOverlay.add(endMarker);
 
+        // 3 ô autocomplete
+        
+        if (departureText != null) {
+            departureText.setPrefKeys(SHARED_PREFS_APPKEY, PREF_LOCATION_KEY);
+        }
+        if (destinationText != null) {
+            destinationText.setPrefKeys(SHARED_PREFS_APPKEY, PREF_LOCATION_KEY);
+        }
+        
+
         // listen cái nút tracking xem nó có được nhấn ko
         if (mTrackingModeButton != null) {
             mTrackingModeButton.setOnClickListener(new View.OnClickListener() {
@@ -873,6 +979,25 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                     updateUIWithTrackingMode();
                 }
             });
+        }
+        if (searchDepButton != null) {
+            searchDepButton.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View view) {
+                    handleSearchButton(START_INDEX, R.id.editDeparture);
+                }
+            });
+        }
+        if (searchDestButton != null) {
+            searchDestButton.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View view) {
+                    handleSearchButton(DEST_INDEX, R.id.editDestination);
+                }
+            });
+        }
+
+        // marker đường đi
+        if (mRoadNodeMarkers != null) {
+            mapOverlay.add(mRoadNodeMarkers);
         }
 
     }
@@ -1320,28 +1445,91 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 
 
     /**
-     * Hàm xóa cái bảng thông báo dẫn đường đi 
-     * @param index [description]
+     * Hàm xóa marker điểm đi, điểm đến, xóa bảng thông báo của điểm đi và điểm đến
+     * @param index [chỉ điểm đi hay điểm đến]
      */
     public void removePoint(int index) {
+        // điểm đi
+        if (index == START_INDEX) {
+            startPoint = null; // xóa biến start
+            if (markerStart != null) {
+                markerStart.closeInfoWindow(); // xóa bảng thông báo
+                mItineraryMarkers.remove(markerStart);
+                markerStart = null; // xóa marjer start
+            }
+        }
 
+        // điểm đến
+        else if (index == DEST_INDEX) {
+            destinationPoint = null;
+            if (markerDestination != null) {
+                markerDestination.closeInfoWindow();
+                mItineraryMarkers.remove(markerDestination);
+                markerDestination = null;
+            }
+        }
+
+        // feature
+        else {
+            viaPoints.remove(index);
+            updateUIWithItineraryMarkers(); // khi xóa điểm trung gian thì phải vẽ lại các marker hành trình
+        }
+
+        getRoadAsync();
     }
 
     /**
-     * hiển thị các marker nếu ta đã biết tọa độ đầu và tọa độ cuối 
+     * hiển thị các marker nếu ta đã biết tọa độ đầu và tọa độ cuối, tọa độ hành trình
      */
     public void updateUIWithItineraryMarkers() {
-        // start marker
-        if (startPoint != null) {
+        // xóa marker hành trình cũ
+        mItineraryMarkers.closeAllInfoWindows();
+        mItineraryMarkers.getItems().clear();
 
+        // vẽ start marker lên map khi ta nhận được startPoint
+        if (startPoint != null) {
+            markerStart = updateItineraryMarker(null, startPoint, START_INDEX, R.string.departure, R.drawable.marker_departure, -1, null);
         }
 
-        // viapoint
-        
+        // vẽ viapoint lên map
+        for (int index = 0; index < viaPoints.size(); index++) {
+            updateItineraryMarker(null, viaPoints.get(index), index, R.string.viapoint, R.drawable.marker_via, -1, null);
+        }
+
         // destination marker
         if (destinationPoint != null) {
-
+            markerDestination = updateItineraryMarker(null, destinationPoint, DEST_INDEX, R.string.destination, R.drawable.marker_destination, -1, null);
         }
+    }
+
+    public Marker updateItineraryMarker(Marker marker, GeoPoint p, int index, int titleResId, int markerResId, int imageResId, String address) {
+        Drawable icon = ContextCompat.getDrawable(context, markerResId);
+        String title = getResources().getString(titleResId);
+        // tạo marker
+        if (marker == null){
+            marker = new Marker(map);
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+            marker.setInfoWindow(mViaPointInfoWindow);
+            marker.setDraggable(true);
+            // listen khi nào marker sẽ được drag
+            marker.setOnMarkerDragListener(mItineraryListener);
+            mItineraryMarkers.add(marker);
+        }
+
+        marker.setTitle(title);
+        marker.setPosition(p);
+        marker.setIcon(icon);
+        if (imageResId != -1)
+            marker.setImage(ContextCompat.getDrawable(context, imageResId));
+        marker.setRelatedObject(index);
+        map.invalidate();
+        if (address != null)
+            marker.setSnippet(address);
+        // tìm kiếm address
+        else
+            //Start geocoding task to get the address and update the Marker description:
+            new ReverseGeocodingTask().execute(marker);
+        return marker;
     }
 
     /**
@@ -1365,6 +1553,525 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             map.setMapOrientation(0.0f);
             mTrackingModeButton.setKeepScreenOn(false);
         }
+    }
+
+    /**
+     * Khi ta nhấn phím search thì hàm này
+     * @param index     Vị trí nút search (search điểm bắt đầu hay search điểm kết thúc)
+     * @param editResId id textview của nút search tương ứng 
+     */
+    public void handleSearchButton(int index, int editResId) {
+        EditText locationEdit = (EditText)findViewById(editResId); // khai báo là ô search nào
+
+        // khi đang dò địa chỉ thì hiện keyboard
+        // khi bấm nút search thì xóa keyboard
+        InputMethodManager imm = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(locationEdit.getWindowToken(), 0);
+
+        // lấy các chữ từ ô edit
+        String locationAddress = locationEdit.getText().toString();
+
+        // khi ta ko bấm chữ nào trong ô search thì ô cái marker biến mất
+        if (locationAddress.equals("")) {
+            removePoint(index); // xóa marker
+            map.invalidate();
+            return;
+        }
+
+        // nếu ta có đánh chữ thì lưu chữ đó vào datase
+        Toast.makeText(context, "Searching: \n" + locationAddress, Toast.LENGTH_LONG).show();
+        AutoCompleteOnPreferences.storePreference(context, locationAddress, SHARED_PREFS_APPKEY, PREF_LOCATION_KEY);
+
+        // dò điểm đó xem có trên map bằng cách chạy nền
+        new GeocodingTask().execute(locationAddress, index);
+    }
+
+    private class GeocodingTask extends AsyncTask<Object, Void, List<Address>> {
+        int mIndex;
+
+        protected List<Address> doInBackground(Object... params) {
+            String locationAddress = (String)params[0];
+            mIndex = (Integer)params[1];
+            GeocoderNominatim geocoder = new GeocoderNominatim(context, userAgent);
+            geocoder.setOptions(true); //ask for enclosing polygon (if any)
+            try {
+                BoundingBoxE6 viewbox = map.getBoundingBox();
+                List<Address> foundAdresses = geocoder.getFromLocationName(locationAddress, 1,
+                        viewbox.getLatSouthE6()*1E-6, viewbox.getLonEastE6()*1E-6,
+                        viewbox.getLatNorthE6()*1E-6, viewbox.getLonWestE6()*1E-6, false);
+                return foundAdresses;
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        protected void onPostExecute(List<Address> foundAdresses) {
+            // khi không nối mạng thì = null
+            if (foundAdresses == null) {
+                Toast.makeText(getApplicationContext(), "Geocoding error", Toast.LENGTH_SHORT).show();
+            }
+
+            // Khi có nối mạng
+            // nhưng ko tìm được điểm cần tìm
+            else if (foundAdresses.size() == 0) { //if no address found, display an error
+                Toast.makeText(getApplicationContext(), "Address not found.", Toast.LENGTH_SHORT).show();
+            }
+
+            // nếu tìm được điểm cần tìm
+            else {
+                Address address = foundAdresses.get(0); //get first address
+                String addressDisplayName = address.getExtras().getString("display_name");
+                // nếu ô search là điểm đi
+                if (mIndex == START_INDEX){
+                    startPoint = new GeoPoint(address.getLatitude(), address.getLongitude());
+                    markerStart = updateItineraryMarker(markerStart, startPoint, START_INDEX,
+                            R.string.departure, R.drawable.marker_departure, -1, addressDisplayName);
+                    map.getController().setCenter(startPoint);
+                }
+                // nếu ô search là điểm đến
+                else if (mIndex == DEST_INDEX){
+                    destinationPoint = new GeoPoint(address.getLatitude(), address.getLongitude());
+                    markerDestination = updateItineraryMarker(markerDestination, destinationPoint, DEST_INDEX,
+                            R.string.destination, R.drawable.marker_destination, -1, addressDisplayName);
+                    map.getController().setCenter(destinationPoint);
+                }
+                getRoadAsync();
+                //get and display enclosing polygon:
+                Bundle extras = address.getExtras();
+                if (extras != null && extras.containsKey("polygonpoints")){
+                    ArrayList<GeoPoint> polygon = extras.getParcelableArrayList("polygonpoints");
+                    //Log.d("DEBUG", "polygon:"+polygon.size());
+                    updateUIWithPolygon(polygon, addressDisplayName);
+                } else {
+                    updateUIWithPolygon(null, "");
+                }
+            }
+        }
+    }
+
+    //add or replace the polygon overlay
+    public void updateUIWithPolygon(ArrayList<GeoPoint> polygon, String name){
+        List<Overlay> mapOverlays = map.getOverlays();
+        int location = -1;
+        if (mDestinationPolygon != null)
+            location = mapOverlays.indexOf(mDestinationPolygon);
+        mDestinationPolygon = new Polygon(this);
+        mDestinationPolygon.setFillColor(0x15FF0080);
+        mDestinationPolygon.setStrokeColor(0x800000FF);
+        mDestinationPolygon.setStrokeWidth(5.0f);
+        mDestinationPolygon.setTitle(name);
+        BoundingBoxE6 bb = null;
+        if (polygon != null){
+            mDestinationPolygon.setPoints(polygon);
+            bb = BoundingBoxE6.fromGeoPoints(polygon);
+        }
+        if (location != -1)
+            mapOverlays.set(location, mDestinationPolygon);
+        else
+            mapOverlays.add(1, mDestinationPolygon); //insert just above the MapEventsOverlay.
+        setViewOn(bb);
+        map.invalidate();
+    }
+
+    void setViewOn(BoundingBoxE6 bb){
+        if (bb != null){
+            map.zoomToBoundingBox(bb);
+        }
+    }
+
+    /**
+     * class listener xem marker có được drag ko 
+     */
+    class OnItineraryMarkerDragListener implements Marker.OnMarkerDragListener {
+        @Override
+        public void onMarkerDrag(Marker marker) {}
+
+        @Override
+        public void onMarkerDragEnd(Marker marker) {
+            int index = (Integer)marker.getRelatedObject();
+            if (index == START_INDEX)
+                startPoint = marker.getPosition();
+            else if (index == DEST_INDEX)
+                destinationPoint = marker.getPosition();
+            else
+                viaPoints.set(index, marker.getPosition());
+            //update location:
+            new ReverseGeocodingTask().execute(marker);
+            //update route:
+            getRoadAsync();
+        }
+
+        @Override
+        public void onMarkerDragStart(Marker marker) {}
+    }
+
+
+    /**
+     * Chuyển địa chỉ geopoint (dạng GPS) sang address 
+     */
+    private class ReverseGeocodingTask extends AsyncTask<Object, Void, String> {
+        Marker marker;
+        protected String doInBackground(Object... params) {
+            marker = (Marker)params[0];
+            // gọi hàm lấy đia chỉ nhờ đia điểm
+            return getAddress(marker.getPosition());
+        }
+        protected void onPostExecute(String result) {
+            marker.setSnippet(result);
+            marker.showInfoWindow();
+        }
+    }
+
+
+    /**
+     * Hàm lấy address dựa vào vị trí trên bản đồ
+     * @param  p tọa dộ
+     * @return   string address tương ứng
+     */
+    public String getAddress(GeoPoint p){
+
+        GeocoderNominatim geocoder = new GeocoderNominatim(context, userAgent);
+        String theAddress;
+        try {
+            double dLatitude = p.getLatitude();
+            double dLongitude = p.getLongitude();
+            List<Address> addresses = geocoder.getFromLocation(dLatitude, dLongitude, 1);
+            StringBuilder sb = new StringBuilder();
+            if (addresses.size() > 0) {
+                Address address = addresses.get(0);
+                int n = address.getMaxAddressLineIndex();
+                for (int i=0; i<=n; i++) {
+                    if (i!=0)
+                        sb.append(", ");
+                    sb.append(address.getAddressLine(i));
+                }
+                theAddress = sb.toString();
+            } else {
+                theAddress = null;
+            }
+        } catch (IOException e) {
+            theAddress = null;
+        }
+        if (theAddress != null) {
+            return theAddress;
+        } else {
+            return "";
+        }
+    }
+
+
+    /**
+     * Hàm vẽ đường đi
+     */
+    public void getRoadAsync(){
+        mRoads = null;
+        GeoPoint roadStartPoint = null;
+        if (startPoint != null){
+            roadStartPoint = startPoint;
+        } else if (myLocationOverlay.isEnabled() && myLocationOverlay.getLocation() != null){
+            //use my current location as itinerary start point:
+            roadStartPoint = myLocationOverlay.getLocation();
+        }
+        if (roadStartPoint == null || destinationPoint == null){
+            updateUIWithRoads(mRoads);
+            return;
+        }
+        ArrayList<GeoPoint> waypoints = new ArrayList<GeoPoint>(2);
+        waypoints.add(roadStartPoint);
+        //add intermediate via points:
+        for (GeoPoint p:viaPoints){
+            waypoints.add(p);
+        }
+        waypoints.add(destinationPoint);
+        new UpdateRoadTask().execute(waypoints);
+    }
+
+    void updateUIWithRoads(Road[] roads){
+        mRoadNodeMarkers.getItems().clear();
+        TextView textView = (TextView)findViewById(R.id.routeInfo);
+        textView.setText("");
+        List<Overlay> mapOverlays = map.getOverlays();
+
+        // xóa road cũ đi
+        if (mRoadOverlays != null){
+            for (int i=0; i<mRoadOverlays.length; i++)
+                mapOverlays.remove(mRoadOverlays[i]);
+            mRoadOverlays = null;
+        }
+        if (roads == null)
+            return;
+        if (roads[0].mStatus == Road.STATUS_TECHNICAL_ISSUE)
+            Toast.makeText(map.getContext(), "Technical issue when getting the route", Toast.LENGTH_SHORT).show();
+        else if (roads[0].mStatus > Road.STATUS_TECHNICAL_ISSUE) //functional issues
+            Toast.makeText(map.getContext(), "No possible route here", Toast.LENGTH_SHORT).show();
+
+        // làm lại road mới
+        mRoadOverlays = new Polyline[roads.length];
+        for (int i=0; i<roads.length; i++) {
+            Polyline roadPolyline = RoadManager.buildRoadOverlay(roads[i], this);
+            mRoadOverlays[i] = roadPolyline;
+            if (mWhichRouteProvider == GRAPHHOPPER_BICYCLE || mWhichRouteProvider == GRAPHHOPPER_PEDESTRIAN) {
+                Paint p = roadPolyline.getPaint();
+                p.setPathEffect(new DashPathEffect(new float[]{10, 5}, 0));
+            }
+            String routeDesc = roads[i].getLengthDurationText(-1);
+            roadPolyline.setTitle(getString(R.string.route) + " - " + routeDesc);
+            roadPolyline.setInfoWindow(new BasicInfoWindow(R.layout.bonuspack_bubble, map));
+            roadPolyline.setRelatedObject(i);
+            // nếu click vào đường đi thì nó sẽ xuất ra cái bảng
+            roadPolyline.setOnClickListener(new RoadOnClickListener());
+            mapOverlays.add(1, roadPolyline);
+            //we insert the road overlays at the "bottom", just above the MapEventsOverlay,
+            //to avoid covering the other overlays.
+        }
+        selectRoad(0);
+    }
+
+    /**
+     * Hàm lắng nghe xem ta có click vào con đường ko 
+     */
+    class RoadOnClickListener implements Polyline.OnClickListener{
+        @Override public boolean onClick(Polyline polyline, MapView mapView, GeoPoint eventPos){
+            int selectedRoad = (Integer)polyline.getRelatedObject();
+            selectRoad(selectedRoad);
+            polyline.showInfoWindow(eventPos);
+            return true;
+        }
+    };
+
+
+    // nếu như ta chọn 1 con đường 
+    void selectRoad(int roadIndex){
+        mSelectedRoad = roadIndex;
+        putRoadNodes(mRoads[roadIndex]);
+        //Set route info in the text view:
+        TextView textView = (TextView)findViewById(R.id.routeInfo);
+        textView.setText(mRoads[roadIndex].getLengthDurationText(-1));
+        for (int i=0; i<mRoadOverlays.length; i++){
+            Paint p = mRoadOverlays[i].getPaint();
+            if (i == roadIndex)
+                p.setColor(0x800000FF); //blue
+            else
+                p.setColor(0x90666666); //grey
+        }
+        map.invalidate();
+    }
+
+    private void putRoadNodes(Road road){
+        mRoadNodeMarkers.getItems().clear();
+        Drawable icon = ContextCompat.getDrawable(context, R.drawable.marker_node);
+        int n = road.mNodes.size();
+        MarkerInfoWindow infoWindow = new MarkerInfoWindow(R.layout.bonuspack_bubble, map);
+        TypedArray iconIds = getResources().obtainTypedArray(R.array.direction_icons);
+        for (int i=0; i<n; i++){
+            RoadNode node = road.mNodes.get(i);
+            String instructions = (node.mInstructions==null ? "" : node.mInstructions);
+            Marker nodeMarker = new Marker(map);
+            nodeMarker.setTitle(getString(R.string.step)+ " " + (i+1));
+            nodeMarker.setSnippet(instructions);
+            nodeMarker.setSubDescription(Road.getLengthDurationText(node.mLength, node.mDuration));
+            nodeMarker.setPosition(node.mLocation);
+            nodeMarker.setIcon(icon);
+            nodeMarker.setInfoWindow(infoWindow); //use a shared infowindow.
+            int iconId = iconIds.getResourceId(node.mManeuverType, R.drawable.ic_empty);
+            if (iconId != R.drawable.ic_empty){
+                Drawable image = ContextCompat.getDrawable(context, iconId);
+                nodeMarker.setImage(image);
+            }
+            mRoadNodeMarkers.add(nodeMarker);
+        }
+        iconIds.recycle();
+    }
+
+    private class UpdateRoadTask extends AsyncTask<Object, Void, Road[]> {
+        protected Road[] doInBackground(Object... params) {
+            @SuppressWarnings("unchecked")
+            ArrayList<GeoPoint> waypoints = (ArrayList<GeoPoint>)params[0];
+            RoadManager roadManager;
+            Locale locale = Locale.getDefault();
+            switch (mWhichRouteProvider){
+                case OSRM:
+                    roadManager = new OSRMRoadManager();
+                    break;
+                case GRAPHHOPPER_FASTEST:
+                    roadManager = new GraphHopperRoadManager(graphHopperApiKey);
+                    roadManager.addRequestOption("locale="+locale.getLanguage());
+                    //roadManager = new MapQuestRoadManager(mapQuestApiKey);
+                    //roadManager.addRequestOption("locale="+locale.getLanguage()+"_"+locale.getCountry());
+                    break;
+                case GRAPHHOPPER_BICYCLE:
+                    roadManager = new GraphHopperRoadManager(graphHopperApiKey);
+                    roadManager.addRequestOption("locale="+locale.getLanguage());
+                    roadManager.addRequestOption("vehicle=bike");
+                    //((GraphHopperRoadManager)roadManager).setElevation(true);
+                    break;
+                case GRAPHHOPPER_PEDESTRIAN:
+                    roadManager = new GraphHopperRoadManager(graphHopperApiKey);
+                    roadManager.addRequestOption("locale="+locale.getLanguage());
+                    roadManager.addRequestOption("vehicle=foot");
+                    //((GraphHopperRoadManager)roadManager).setElevation(true);
+                    break;
+                case GOOGLE_FASTEST:
+                    roadManager = new GoogleRoadManager();
+                    break;
+                default:
+                    return null;
+            }
+            return roadManager.getRoads(waypoints);
+        }
+
+        protected void onPostExecute(Road[] result) {
+            mRoads = result;
+            updateUIWithRoads(result);
+            getPOIAsync(poiTagText.getText().toString());
+        }
+    }
+
+    void getPOIAsync(String tag){
+        mPoiMarkers.getItems().clear();
+        new POILoadingTask().execute(tag);
+    }
+
+    private class POILoadingTask extends AsyncTask<Object, Void, ArrayList<POI>> {
+        String mFeatureTag;
+        String message;
+        protected ArrayList<POI> doInBackground(Object... params) {
+            mFeatureTag = (String)params[0];
+
+            if (mFeatureTag == null || mFeatureTag.equals("")){
+                return null;
+            } else if (mFeatureTag.equals("wikipedia")){
+                GeoNamesPOIProvider poiProvider = new GeoNamesPOIProvider(geonamesAccount);
+                //Get POI inside the bounding box of the current map view:
+                BoundingBoxE6 bb = map.getBoundingBox();
+                ArrayList<POI> pois = poiProvider.getPOIInside(bb, 30);
+                return pois;
+            } else if (mFeatureTag.equals("flickr")){
+                FlickrPOIProvider poiProvider = new FlickrPOIProvider(flickrApiKey);
+                BoundingBoxE6 bb = map.getBoundingBox();
+                ArrayList<POI> pois = poiProvider.getPOIInside(bb, 30);
+                return pois;
+            } else if (mFeatureTag.startsWith("picasa")){
+                PicasaPOIProvider poiProvider = new PicasaPOIProvider(null);
+                BoundingBoxE6 bb = map.getBoundingBox();
+                //allow to search for keywords among picasa photos:
+                String q = mFeatureTag.substring("picasa".length());
+                ArrayList<POI> pois = poiProvider.getPOIInside(bb, 50, q);
+                return pois;
+            } else {
+				/*
+				NominatimPOIProvider poiProvider = new NominatimPOIProvider();
+				ArrayList<POI> pois;
+				if (mRoad == null){
+					pois = poiProvider.getPOIInside(map.getBoundingBox(), mFeatureTag, 100);
+				} else {
+					pois = poiProvider.getPOIAlong(mRoad.getRouteLow(), mFeatureTag, 100, 2.0);
+				}
+				*/
+                OverpassAPIProvider overpassProvider = new OverpassAPIProvider();
+                String osmTag = getOSMTag(mFeatureTag);
+                if (osmTag == null){
+                    message = mFeatureTag + " is not a valid feature.";
+                    return null;
+                }
+                String oUrl = overpassProvider.urlForPOISearch(osmTag, map.getBoundingBox(), 100, 10);
+                ArrayList<POI> pois = overpassProvider.getPOIsFromUrl(oUrl);
+                return pois;
+            }
+        }
+        protected void onPostExecute(ArrayList<POI> pois) {
+            mPOIs = pois;
+            if (mFeatureTag == null || mFeatureTag.equals("")){
+                //no search, no message
+            } else if (mPOIs == null){
+                if (message != null)
+                    Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
+                else
+                    Toast.makeText(getApplicationContext(), "Technical issue when getting "+mFeatureTag+ " POI.", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(getApplicationContext(), mFeatureTag+ " found:"+mPOIs.size(), Toast.LENGTH_LONG).show();
+            }
+            updateUIWithPOI(mPOIs, mFeatureTag);
+            if (mFeatureTag.equals("flickr")||mFeatureTag.startsWith("picasa")||mFeatureTag.equals("wikipedia"))
+                startAsyncThumbnailsLoading(mPOIs);
+        }
+    }
+
+    String getOSMTag(String humanReadableFeature){
+        HashMap<String,String> map = BonusPackHelper.parseStringMapResource(getApplicationContext(), R.array.osm_poi_tags);
+        return map.get(humanReadableFeature.toLowerCase(Locale.getDefault()));
+    }
+
+    void updateUIWithPOI(ArrayList<POI> pois, String featureTag){
+        if (pois != null){
+            POIInfoWindow poiInfoWindow = new POIInfoWindow(map);
+            for (POI poi:pois){
+                Marker poiMarker = new Marker(map);
+                poiMarker.setTitle(poi.mType);
+                poiMarker.setSnippet(poi.mDescription);
+                poiMarker.setPosition(poi.mLocation);
+                Drawable icon = null;
+                if (poi.mServiceId == POI.POI_SERVICE_NOMINATIM || poi.mServiceId == POI.POI_SERVICE_OVERPASS_API){
+                    icon = ContextCompat.getDrawable(context, R.drawable.marker_poi);
+                    poiMarker.setAnchor(Marker.ANCHOR_CENTER, 1.0f);
+                } else if (poi.mServiceId == POI.POI_SERVICE_GEONAMES_WIKIPEDIA){
+                    if (poi.mRank < 90)
+                        icon = ContextCompat.getDrawable(context, R.drawable.marker_poi_wikipedia_16);
+                    else
+                        icon = ContextCompat.getDrawable(context, R.drawable.marker_poi_wikipedia_32);
+                } else if (poi.mServiceId == POI.POI_SERVICE_FLICKR){
+                    icon = ContextCompat.getDrawable(context, R.drawable.marker_poi_flickr);
+                } else if (poi.mServiceId == POI.POI_SERVICE_PICASA){
+                    icon = ContextCompat.getDrawable(context, R.drawable.marker_poi_picasa_24);
+                    poiMarker.setSubDescription(poi.mCategory);
+                }
+                poiMarker.setIcon(icon);
+                poiMarker.setRelatedObject(poi);
+                poiMarker.setInfoWindow(poiInfoWindow);
+                //thumbnail loading moved in async task for better performances.
+                mPoiMarkers.add(poiMarker);
+            }
+        }
+        mPoiMarkers.setName(featureTag);
+        mPoiMarkers.invalidate();
+        map.invalidate();
+    }
+
+    /** Loads all thumbnails in background */
+    void startAsyncThumbnailsLoading(ArrayList<POI> pois){
+        if (pois == null)
+            return;
+        //Try to stop existing threads:
+        mThreadPool.shutdownNow();
+        mThreadPool = Executors.newFixedThreadPool(3);
+        for (int i=0; i<pois.size(); i++){
+            final POI poi = pois.get(i);
+            final Marker marker = mPoiMarkers.getItem(i);
+            mThreadPool.submit(new ThumbnailLoaderTask(poi, marker));
+        }
+    }
+
+    class ThumbnailLoaderTask implements Runnable {
+        POI mPoi; Marker mMarker;
+        ThumbnailLoaderTask(POI poi, Marker marker){
+            mPoi = poi; mMarker = marker;
+        }
+        @Override public void run(){
+            Bitmap thumbnail = mPoi.getThumbnail();
+            if (thumbnail != null){
+                setMarkerIconAsPhoto(mMarker, thumbnail);
+            }
+        }
+    }
+
+    void setMarkerIconAsPhoto(Marker marker, Bitmap thumbnail){
+        int borderSize = 2;
+        thumbnail = Bitmap.createScaledBitmap(thumbnail, 48, 48, true);
+        Bitmap withBorder = Bitmap.createBitmap(thumbnail.getWidth() + borderSize * 2, thumbnail.getHeight() + borderSize * 2, thumbnail.getConfig());
+        Canvas canvas = new Canvas(withBorder);
+        canvas.drawColor(Color.WHITE);
+        canvas.drawBitmap(thumbnail, borderSize, borderSize, null);
+        BitmapDrawable icon = new BitmapDrawable(getResources(), withBorder);
+        marker.setIcon(icon);
     }
 
 }

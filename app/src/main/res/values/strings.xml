@@ -25,6 +25,16 @@
     <!-- marker hành trình -->
     <string name="itinerary_markers_title">Route Via-Points</string>
 
+    <!-- string trong activity_maps.xml -->
+    <string name="my_position">My Position</string> <!-- điểm đầu -->
+    <string name="search">Search</string> <!-- nút search -->
+    <string name="destination">Destination</string> <!-- điểm đến -->
+    <string name="feature">Feature</string> <!-- các điểm lân cận (chợ, siêu thị)... -->
+    <string name="departure">Departure</string> <!-- marker đầu -->
+    <string name="viapoint">Via-Point</string> <!-- marker điểm trung gian -->
+    <string name="route">Route</string>
+    <string name="step">Step</string>
+
 
 
 </resources>
