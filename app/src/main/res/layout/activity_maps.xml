@@ -11,6 +11,7 @@
     <!-- -->
     <!-- 3 thanh search + autocomplete -->
     <!-- 3 ô điền address và button search -->
+    <!-- 1 ô expander-->
     <LinearLayout
         android:id="@+id/search_panel"
         android:layout_width="fill_parent"
