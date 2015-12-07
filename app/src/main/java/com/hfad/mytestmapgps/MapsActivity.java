@@ -32,6 +32,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
@@ -214,7 +215,6 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private Marker markerStart = null;
     private Marker markerDestination = null;
     private ArrayList<GeoPoint> viaPoints = null;
-    
 
     // các marker hành trình
     private FolderOverlay mItineraryMarkers = null;
@@ -245,9 +245,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private AutoCompleteOnPreferences destinationText = null;
     private Button searchDestButton = null;
 
-    private AutoCompleteTextView poiTagText;
-    private RadiusMarkerClusterer mPoiMarkers;
-    public static ArrayList<POI> mPOIs;
+
     private ExecutorService mThreadPool = Executors.newFixedThreadPool(3);
 
     private View expander = null;
@@ -271,7 +269,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private TextView text_long = null;
     private TextView text_time = null;
     private String mLastUpdateTime = null;
-
+    // POI text
+    String[] poiTags = null;
+    private AutoCompleteTextView poiTagText = null;
+    private RadiusMarkerClusterer mPoiMarkers = null;
+    public static ArrayList<POI> mPOIs = null;
+    private ArrayAdapter<String> poiAdapter = null;
+    private Button setPOITagButton = null;
 
     // context
     private Context context;
@@ -524,6 +528,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             // lấy tọa độ điểm đến
             // lấy tọa độ các điểm trung gian
             // lấy tracking mode
+            // lấy location 
             if (savedInstanceState.keySet().contains(Constants.START_POINT_KEY)) {
                 startPoint = savedInstanceState.getParcelable(Constants.START_POINT_KEY);
             }
@@ -533,13 +538,20 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             if (savedInstanceState.keySet().contains(Constants.VIA_POINT_KEY)) {
                 viaPoints = savedInstanceState.getParcelableArrayList(Constants.VIA_POINT_KEY);
             }
+            if (savedInstanceState.keySet().contains(Constants.MY_LOCATION_KEY)) {
+                myLocationOverlay.setLocation((GeoPoint) savedInstanceState.getParcelable(Constants.MY_LOCATION_KEY));
+            }
             if (savedInstanceState.keySet().contains(Constants.TRACKING_MODE_KEY)) {
                 mTrackingMode = savedInstanceState.getBoolean(Constants.TRACKING_MODE_KEY);
                 updateUIWithTrackingMode();
             }
 
             // cập nhật giao diện lên màn hình android 
-            updateUI(); // output old long and latitude 
+            updateUI(); // output old long and latitude
+            // vẽ hình duong đi
+            updateUIWithRoads(mRoads);
+            // vẽ POI
+            updateUIWithPOI(mPOIs, "");
         }
     }
   
@@ -857,6 +869,16 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             destinationText = (AutoCompleteOnPreferences)findViewById(R.id.editDestination); // điểm đến 
             searchDestButton = (Button)findViewById(R.id.buttonSearchDest);
 
+            // POI searchs
+            poiTags = getResources().getStringArray(R.array.poi_tags); // không cần đánh trước, nhưng ta đã có những cái trong database 
+            poiTagText = (AutoCompleteTextView)findViewById(R.id.poiTag); // khung search dùng để search POI 
+            poiAdapter = new ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line, poiTags); // sổ xuống 
+            poiTagText.setAdapter(poiAdapter);
+            setPOITagButton = (Button)findViewById(R.id.buttonSetPOITag);
+            
+            // POI markers (khi ta search được các đia danh thì phải show các marker ra)
+            mPoiMarkers = new RadiusMarkerClusterer(context);
+
             expander = (View)findViewById(R.id.expander); // khai báo thanh expander
 
             searchPanel = (View)findViewById(R.id.search_panel); // gom lại  3 ô search với 1 cái expander thành thanh search panel
@@ -888,6 +910,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         //map.setBuiltInZoomControls((true)); // thêm thanh zoom cho map
         registerForContextMenu(searchDestButton);
 
+        
+
         // add overlay vào map: event, chỉ đường, marker hành trình, la bàn, thanh scale, bản đồ mini, here map, endmap
         mapOverlay.add(0, mapEventsOverlay); // add cái event này vào overlay trên map ở vị trí cuối cùng
         mapOverlay.add(myLocationOverlay);
@@ -917,11 +941,10 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         // thanh expander cũng listen nghe người ta có kéo thả thanh đó ko
         expander.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
-                View searchPanel = (View)findViewById(R.id.search_panel);
+                View searchPanel = (View) findViewById(R.id.search_panel);
                 if (searchPanel.getVisibility() == View.VISIBLE) {
                     searchPanel.setVisibility(View.GONE);
-                }
-                else {
+                } else {
                     searchPanel.setVisibility(View.VISIBLE);
                 }
 
@@ -948,7 +971,30 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             }
         });
 
-        
+        // POI
+        setPOITagButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // khi click nút search thì hide keyboard
+                //Hide the soft keyboard:
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(poiTagText.getWindowToken(), 0);
+                //Start search:
+                String feature = poiTagText.getText().toString();
+                if (!feature.equals(""))
+                    Toast.makeText(v.getContext(), "Searching:\n" + feature, Toast.LENGTH_LONG).show();
+                getPOIAsync(feature);
+            }
+            });
+
+        Drawable clusterIconD = ContextCompat.getDrawable(context, Constants.POI_ICON);
+        Bitmap clusterIcon = ((BitmapDrawable)clusterIconD).getBitmap();
+        mPoiMarkers.setIcon(clusterIcon);
+            mPoiMarkers.mAnchorV = Marker.ANCHOR_BOTTOM;
+            mPoiMarkers.mTextAnchorU = 0.70f;
+            mPoiMarkers.mTextAnchorV = 0.27f;
+            mPoiMarkers.getTextPaint().setTextSize(12.0f);
+        map.getOverlays().add(mPoiMarkers);
 
     }
 
@@ -2030,3 +2076,5 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     }
 
 }
+
+

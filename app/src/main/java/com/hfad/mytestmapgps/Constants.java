@@ -26,6 +26,7 @@ public final class Constants {
 	public static final String DEST_POINT_KEY                  = "destination";
 	public static final String VIA_POINT_KEY                   = "viapoints";
 	public static final String TRACKING_MODE_KEY               = "tracking_mode";
+	public static final String MY_LOCATION_KEY = "location"; // myLocationOverlay
 
 	public static final String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
 	public static final String LOCATION_KEY                    = "location-key"; // lưu location hiện tại của người dùng 
@@ -44,6 +45,7 @@ public final class Constants {
 	public static final int DEPARTURE_ICON = R.drawable.marker_departure;
 	public static final int VIA_POINT_ICON = R.drawable.marker_via;
 	public static final int DESTINATION_ICON = R.drawable.marker_destination;
+	public static final int POI_ICON = R.drawable.marker_poi_cluster;
 	
 
 	// dòng chữ cho heremarker và endmarker
