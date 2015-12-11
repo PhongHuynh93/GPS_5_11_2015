@@ -30,6 +30,10 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.ContextMenu;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
@@ -62,6 +66,7 @@ import org.osmdroid.bonuspack.location.POI;
 import org.osmdroid.bonuspack.location.PicasaPOIProvider;
 import org.osmdroid.bonuspack.overlays.BasicInfoWindow;
 import org.osmdroid.bonuspack.overlays.FolderOverlay;
+import org.osmdroid.bonuspack.overlays.InfoWindow;
 import org.osmdroid.bonuspack.overlays.MapEventsOverlay;
 import org.osmdroid.bonuspack.overlays.MapEventsReceiver;
 import org.osmdroid.bonuspack.overlays.Marker;
@@ -277,6 +282,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     private ArrayAdapter<String> poiAdapter = null;
     private Button setPOITagButton = null;
 
+    private GeoPoint mClickedGeoPoint; // lưu tọa độ khi ta click trên map
+
     // context
     private Context context;
 
@@ -295,6 +302,9 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     static String mapQuestApiKey;
     static String flickrApiKey;
     static String geonamesAccount;
+
+    protected static final int ROUTE_REQUEST = 1;
+    protected static final int POIS_REQUEST = 2;
 
     //////////////////////////////////////////////////////////////////////
     // sử dụng thư viên osmdroid để nghe tín hiệu GPS chứ ko nhờ google //
@@ -465,10 +475,12 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         super.onResume();
         if (mGoogleApiClient.isConnected() && !mRequestingLocationUpdates) {
 	        startLocationUpdates();
+            myLocationOverlay.setEnabled(true); // bật lại. vị trí của mình
 	    }
         // bat compass
         if (mCompassOverlay != null)
             mCompassOverlay.enableCompass();
+
     }
 
     /**
@@ -481,6 +493,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         // tat' compass
         if (mCompassOverlay != null)
             mCompassOverlay.disableCompass();
+        // save state trước khi pause
+        this.savePrefs();
 	}
 
 	protected void stopLocationUpdates() {
@@ -1034,6 +1048,8 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     public boolean singleTapConfirmedHelper(GeoPoint p) {
         //Toast.makeText(this, "Tapped", Toast.LENGTH_SHORT).show();
         Toast.makeText(this, "Tap on ("+p.getLatitude()+","+p.getLongitude()+")", Toast.LENGTH_SHORT).show();
+        // ẩn tất cả cửa sổ đang mở 
+        InfoWindow.closeAllInfoWindowsOn(map);
         return true; // return true la sử dụng event này
     }
 
@@ -1068,6 +1084,10 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             new connectAsyncTask(urlForDirections).execute();
         }
         map.invalidate();
+        // khi nhấn dài thì nó hiện ra cái bảng thông báo 
+        mClickedGeoPoint = p;
+        Button searchButton = (Button)findViewById(R.id.buttonSearchDest);
+        openContextMenu(searchButton); 
         return true;
     }
 
@@ -2112,6 +2132,146 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         BitmapDrawable icon = new BitmapDrawable(getResources(), withBorder);
         marker.setIcon(icon);
     }
+
+
+    ///////////
+    // MENU  //
+    ///////////
+    @Override public void onCreateContextMenu(ContextMenu menu, View v,
+            ContextMenu.ContextMenuInfo menuInfo) {
+        super.onCreateContextMenu(menu, v, menuInfo);
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.map_menu, menu);
+    }
+
+    @Override public boolean onContextItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+        case R.id.menu_departure:
+            startPoint = new GeoPoint(mClickedGeoPoint);
+            markerStart = updateItineraryMarker(markerStart, startPoint, START_INDEX,
+                R.string.departure, R.drawable.marker_departure, -1, null);
+            getRoadAsync();
+            return true;
+        case R.id.menu_destination:
+            destinationPoint = new GeoPoint(mClickedGeoPoint);
+            markerDestination = updateItineraryMarker(markerDestination, destinationPoint, DEST_INDEX,
+                R.string.destination, R.drawable.marker_destination, -1, null);
+            getRoadAsync();
+            return true;
+        case R.id.menu_viapoint:
+            GeoPoint viaPoint = new GeoPoint(mClickedGeoPoint);
+            addViaPoint(viaPoint);
+            getRoadAsync();
+            return true;
+
+        default:
+            return super.onContextItemSelected(item);
+        }
+    }
+
+    public void addViaPoint(GeoPoint p){
+        viaPoints.add(p);
+        updateItineraryMarker(null, p, viaPoints.size() - 1,
+                R.string.viapoint, R.drawable.marker_via, -1, null);
+    }
+
+
+    @Override public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.option_menu, menu);
+        
+        switch (mWhichRouteProvider){
+            case OSRM:
+                menu.findItem(R.id.menu_route_osrm).setChecked(true);
+                break;
+            case GRAPHHOPPER_FASTEST:
+                menu.findItem(R.id.menu_route_graphhopper_fastest).setChecked(true);
+                break;
+            case GRAPHHOPPER_BICYCLE:
+                menu.findItem(R.id.menu_route_graphhopper_bicycle).setChecked(true);
+                break;
+            case GRAPHHOPPER_PEDESTRIAN:
+                menu.findItem(R.id.menu_route_graphhopper_pedestrian).setChecked(true);
+                break;
+            case GOOGLE_FASTEST:
+                menu.findItem(R.id.menu_route_google).setChecked(true);
+                break;
+        }
+        
+        return true;
+    }
+    
+    @Override public boolean onPrepareOptionsMenu(Menu menu) {
+        if (mRoads != null && mRoads[mSelectedRoad].mNodes.size()>0)
+            menu.findItem(R.id.menu_itinerary).setEnabled(true);
+        else
+            menu.findItem(R.id.menu_itinerary).setEnabled(false);
+        if (mPOIs != null && mPOIs.size()>0)
+            menu.findItem(R.id.menu_pois).setEnabled(true);
+        else 
+            menu.findItem(R.id.menu_pois).setEnabled(false);
+        return true;
+    }
+
+    /** return the index of the first Marker having its bubble opened, -1 if none */
+    int getIndexOfBubbledMarker(List<? extends Overlay> list){
+        for (int i=0; i<list.size(); i++){
+            Overlay item = list.get(i);
+            if (item instanceof Marker){
+                Marker marker = (Marker)item;
+                if (marker.isInfoWindowShown())
+                    return i;
+            }
+        }
+        return -1;
+    }
+
+    @Override public boolean onOptionsItemSelected(MenuItem item) {
+        Intent myIntent;
+        switch (item.getItemId()) {
+            case R.id.menu_itinerary:
+                myIntent = new Intent(this, RouteActivity.class);
+                int currentNodeId = getIndexOfBubbledMarker(mRoadNodeMarkers.getItems());
+                myIntent.putExtra("SELECTED_ROAD", mSelectedRoad);
+                myIntent.putExtra("NODE_ID", currentNodeId);
+                startActivityForResult(myIntent, ROUTE_REQUEST);
+                return true;
+            case R.id.menu_pois:
+                myIntent = new Intent(this, POIActivity.class);
+                myIntent.putExtra("ID", getIndexOfBubbledMarker(mPoiMarkers.getItems()));
+                startActivityForResult(myIntent, POIS_REQUEST);
+                return true;
+            case R.id.menu_route_osrm:
+                mWhichRouteProvider = OSRM;
+                item.setChecked(true);
+                getRoadAsync();
+                return true;
+            case R.id.menu_route_graphhopper_fastest:
+                mWhichRouteProvider = GRAPHHOPPER_FASTEST;
+                item.setChecked(true);
+                getRoadAsync();
+                return true;
+            case R.id.menu_route_graphhopper_bicycle:
+                mWhichRouteProvider = GRAPHHOPPER_BICYCLE;
+                item.setChecked(true);
+                getRoadAsync();
+                return true;
+            case R.id.menu_route_graphhopper_pedestrian:
+                mWhichRouteProvider = GRAPHHOPPER_PEDESTRIAN;
+                item.setChecked(true);
+                getRoadAsync();
+                return true;
+            case R.id.menu_route_google:
+                mWhichRouteProvider = GOOGLE_FASTEST;
+                item.setChecked(true);
+                getRoadAsync();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+
 
 }
 

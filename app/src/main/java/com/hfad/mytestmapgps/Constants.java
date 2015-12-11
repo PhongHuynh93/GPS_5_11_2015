@@ -46,6 +46,7 @@ public final class Constants {
 	public static final int VIA_POINT_ICON = R.drawable.marker_via;
 	public static final int DESTINATION_ICON = R.drawable.marker_destination;
 	public static final int POI_ICON = R.drawable.marker_poi_cluster;
+
 	
 
 	// dòng chữ cho heremarker và endmarker

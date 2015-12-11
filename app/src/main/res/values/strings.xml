@@ -35,6 +35,47 @@
     <string name="route">Route</string>
     <string name="step">Step</string>
 
+    <!--  items_list.xml -->
+    <string name="items_list_title">Itinerary:</string>
 
+    <!-- map_menu-->
+    <string name="menu_departure">Set Departure</string>
+    <string name="menu_destination">Set Destination</string>
+    <string name="menu_viapoint">Add Via-Point</string>
+    <string name="menu_kmlpoint">Add KML Point</string>
+    <string name="menu_none">Cancel</string>
+
+    <!-- option_menu-->
+    <string name="menu_start_sharing">Share with Friends</string>
+    <string name="menu_stop_sharing">Stop Sharing</string>
+    <string name="menu_itinerary">Itinerary</string>
+    <string name="menu_pois">Features list</string>
+    <string name="menu_cache">Cache Manager</string>
+    <string name="menu_download_view_area">Download view area</string>
+    <string name="menu_clear_view_area">Clear view area</string>
+    <string name="menu_cache_usage">Cache usage</string>
+    <string name="menu_tile">Tile Provider</string>
+    <string name="menu_route">Route Provider</string>
+    <string name="menu_route_osrm">OSRM - Car</string>
+    <string name="menu_route_graphhopper_fastest">GraphHopper - Car</string>
+    <string name="menu_route_graphhopper_bicycle">GraphHopper - Bicycle</string>
+    <string name="menu_route_graphhopper_pedestrian">GraphHopper - Pedestrian</string>
+    <string name="menu_route_google">Google - Car</string>
+    <string name="menu_kml">KML Toolbox</string>
+    <string name="menu_kml_url">Open url...</string>
+    <string name="menu_open_file">Open file...</string>
+    <string name="menu_overpassapi_wizard">OverpassAPI Wizard...</string>
+    <string name="menu_kml_get_overlays">Pick Overlays</string>
+    <string name="menu_kml_tree">Edit Features...</string>
+    <string name="menu_kml_styles">Edit Shared Styles...</string>
+    <string name="menu_save_file">Save as...</string>
+    <string name="menu_kml_clear">Clear</string>
+
+    <!-- style_option_menu-->
+    <string name="style_option_menu_new">New Style</string>
+
+    <!-- style_item_menu-->
+    <string name="style_item_menu_cut">Delete</string>
+    <string name="style_item_menu_none">Cancel</string>
 
 </resources>
