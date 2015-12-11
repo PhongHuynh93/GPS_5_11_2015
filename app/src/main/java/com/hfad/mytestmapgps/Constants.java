@@ -54,4 +54,9 @@ public final class Constants {
 
 	// phương tiện di chuyển
 	public static final String TRANSPORTATION = "driving"; // //walking, bicycling, transit
+
+	// requestCode của app
+	public static final int REQUEST_RESOLVE_ERROR = 1001; // // Request code to use when launching the resolution activity
+	public static final int ROUTE_REQUEST = 1; // // Request code to use when launching the resolution activity
+	public static final int POIS_REQUEST = 2; // // Request code to use when launching the resolution activity
 }

@@ -329,9 +329,6 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     /////////////////////////////////////
     // variable to resolve error // // //
     /////////////////////////////////////
-    // Now you're ready to safely run your app and connect to Google Play services. How you can perform read and write requests to any of the Google Play services using GoogleApiClient is discussed in the next section.
-    // Request code to use when launching the resolution activity
-	private static final int REQUEST_RESOLVE_ERROR    = 1001;
 	// Unique tag for the error dialog fragment
 	private static final String DIALOG_ERROR          = "dialog_error";
 	
@@ -368,13 +365,32 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 	    super.onSaveInstanceState(savedInstanceState);
 
 	    savedInstanceState.putBoolean(Constants.STATE_RESOLVING_ERROR, mResolvingError); // Save whether the address has been requested.
-        savedInstanceState.putBoolean(Constants.ADDRESS_REQUESTED_KEY, mAddressRequested);  // true la` da~ nhan' nut' lay dia chi 
-
-	    savedInstanceState.putParcelable(Constants.LOCATION_KEY, mCurrentLocation);
-
+        savedInstanceState.putBoolean(Constants.ADDRESS_REQUESTED_KEY, mAddressRequested);  // true la` da~ nhan' nut' lay dia chi
+	    savedInstanceState.putParcelable(Constants.LOCATION_KEY, mCurrentLocation); // địa chỉ hiện tải của user
 	    savedInstanceState.putString(Constants.LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime); // thời gian lưu lại 
         savedInstanceState.putString(Constants.LOCATION_ADDRESS_KEY, mAddressOutput); // Save the address string.
+
+        savedInstanceState.putParcelable("location", myLocationOverlay.getLocation());
+        savedInstanceState.putBoolean("tracking_mode", mTrackingMode);
+        savedInstanceState.putParcelable("start", startPoint);
+        savedInstanceState.putParcelable("destination", destinationPoint);
+        savedInstanceState.putParcelableArrayList("viapoints", viaPoints);
+
+        // lưu lại những setting của chương trình
+        this.savePrefs();
 	}
+
+    void savePrefs(){
+        SharedPreferences.Editor ed = prefs.edit();
+        ed.putInt("MAP_ZOOM_LEVEL", map.getZoomLevel());
+        GeoPoint c = (GeoPoint) map.getMapCenter();
+        ed.putFloat("MAP_CENTER_LAT", (float)c.getLatitude());
+        ed.putFloat("MAP_CENTER_LON", (float)c.getLongitude());
+        View searchPanel = (View)findViewById(R.id.search_panel);
+        ed.putInt("PANEL_VISIBILITY", searchPanel.getVisibility());
+        ed.putInt("ROUTE_PROVIDER", mWhichRouteProvider);
+        ed.commit();
+    }
 
 	///////////////////////////////
 	//////////////////////////////////
@@ -794,7 +810,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         } else if (result.hasResolution()) {
             try {
                 mResolvingError = true;
-                result.startResolutionForResult(this, REQUEST_RESOLVE_ERROR);
+                result.startResolutionForResult(this, Constants.REQUEST_RESOLVE_ERROR);
             } catch (IntentSender.SendIntentException e) {
                 // There was an error with the resolution intent. Try again.
                 mGoogleApiClient.connect();
@@ -1088,7 +1104,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
             // Get the error code and retrieve the appropriate dialog
             int errorCode = this.getArguments().getInt(DIALOG_ERROR);
             return GoogleApiAvailability.getInstance().getErrorDialog(
-                    this.getActivity(), errorCode, REQUEST_RESOLVE_ERROR);
+                    this.getActivity(), errorCode, Constants.REQUEST_RESOLVE_ERROR);
         }
 
         @Override
@@ -1101,21 +1117,43 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
      * Once the user completes the resolution provided by startResolutionForResult() or GoogleApiAvailability.getErrorDialog(), your activity receives the onActivityResult() callback with the RESULT_OK result code. You can then call connect() again. 
      * @param requestCode [description]
      * @param resultCode  [description]
-     * @param data        [description]
+     * @param intent        [description]
      */
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == REQUEST_RESOLVE_ERROR) {
-            mResolvingError = false;
-            if (resultCode == RESULT_OK) {
-                // Make sure the app is not already connected or attempting to connect
-                if (!mGoogleApiClient.isConnecting() &&
-                        !mGoogleApiClient.isConnected()) {
-                    mGoogleApiClient.connect();
+    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        switch (requestCode) {
+            case Constants.REQUEST_RESOLVE_ERROR: {
+                mResolvingError = false;
+                if (resultCode == RESULT_OK) {
+                    // Make sure the app is not already connected or attempting to connect
+                    if (!mGoogleApiClient.isConnecting() && !mGoogleApiClient.isConnected()) {
+                        mGoogleApiClient.connect();
+                    }
                 }
             }
+            case Constants.ROUTE_REQUEST :
+                if (resultCode == RESULT_OK) {
+                    int nodeId = intent.getIntExtra("NODE_ID", 0);
+                    map.getController().setCenter(mRoads[mSelectedRoad].mNodes.get(nodeId).mLocation);
+                    Marker roadMarker = (Marker)mRoadNodeMarkers.getItems().get(nodeId);
+                    roadMarker.showInfoWindow();
+                }
+                break;
+            case Constants.POIS_REQUEST:
+                if (resultCode == RESULT_OK) {
+                    int id = intent.getIntExtra("ID", 0);
+                    map.getController().setCenter(mPOIs.get(id).mLocation);
+                    Marker poiMarker = mPoiMarkers.getItem(id);
+                    poiMarker.showInfoWindow();
+                }
+                break;
+
+            default: 
+                break;
         }
     }
+        
+    
 
 
     ////////////////////////////////////////////////////////
