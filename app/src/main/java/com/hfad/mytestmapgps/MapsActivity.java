@@ -1453,7 +1453,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         if (roadOverlay != null)
             mapOverlay.remove(roadOverlay);
 
-        roadOverlay = RoadManager.buildRoadOverlay(road, 0x80000080, 11.0f, context); // hàm vẽ mình tự lập trình
+        roadOverlay = RoadManager.buildRoadOverlay(road, 0x800080FF, 11.0f, context); // hàm vẽ mình tự lập trình
         mapOverlay.add(roadOverlay);
         if (mapOverlay.contains(mMinimapOverlay))
             mapOverlay.remove(mMinimapOverlay);
@@ -1682,7 +1682,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                     startPoint = new GeoPoint(address.getLatitude(), address.getLongitude());
                     // thêm marker tại vi trí start 
                     markerStart = updateItineraryMarker(markerStart, startPoint, START_INDEX,
-                            R.string.departure, R.drawable.marker_departure, -1, addressDisplayName);
+                            R.string.departure, Constants.DEPARTURE_ICON, -1, addressDisplayName);
                     map.getController().setCenter(startPoint);
                 }
                 // nếu ô search là điểm đến
@@ -1690,7 +1690,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                     destinationPoint = new GeoPoint(address.getLatitude(), address.getLongitude());
                     // thêm marker tại vị trí dest 
                     markerDestination = updateItineraryMarker(markerDestination, destinationPoint, DEST_INDEX,
-                            R.string.destination, R.drawable.marker_destination, -1, addressDisplayName);
+                            R.string.destination, Constants.DESTINATION_ICON, -1, addressDisplayName);
                     map.getController().setCenter(destinationPoint);
                 }
                 // tìm đường giữa 2 điểm đi và đến 
@@ -1917,7 +1917,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
 
     private void putRoadNodes(Road road){
         mRoadNodeMarkers.getItems().clear();
-        Drawable icon = ContextCompat.getDrawable(context, R.drawable.marker_node);
+        Drawable icon = ContextCompat.getDrawable(context, Constants.NODE_ICON);
         int n = road.mNodes.size();
         MarkerInfoWindow infoWindow = new MarkerInfoWindow(R.layout.bonuspack_bubble, map);
         TypedArray iconIds = getResources().obtainTypedArray(R.array.direction_icons);
@@ -2070,7 +2070,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
                 poiMarker.setPosition(poi.mLocation);
                 Drawable icon = null;
                 if (poi.mServiceId == POI.POI_SERVICE_NOMINATIM || poi.mServiceId == POI.POI_SERVICE_OVERPASS_API){
-                    icon = ContextCompat.getDrawable(context, R.drawable.marker_poi);
+                    icon = ContextCompat.getDrawable(context, Constants.MARKER_POI);
                     poiMarker.setAnchor(Marker.ANCHOR_CENTER, 1.0f);
                 } else if (poi.mServiceId == POI.POI_SERVICE_GEONAMES_WIKIPEDIA){
                     if (poi.mRank < 90)
@@ -2149,13 +2149,13 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
         case R.id.menu_departure:
             startPoint = new GeoPoint(mClickedGeoPoint);
             markerStart = updateItineraryMarker(markerStart, startPoint, START_INDEX,
-                R.string.departure, R.drawable.marker_departure, -1, null);
+                R.string.departure, Constants.DEPARTURE_ICON, -1, null);
             getRoadAsync();
             return true;
         case R.id.menu_destination:
             destinationPoint = new GeoPoint(mClickedGeoPoint);
             markerDestination = updateItineraryMarker(markerDestination, destinationPoint, DEST_INDEX,
-                R.string.destination, R.drawable.marker_destination, -1, null);
+                R.string.destination, Constants.DESTINATION_ICON, -1, null);
             getRoadAsync();
             return true;
         case R.id.menu_viapoint:
@@ -2172,7 +2172,7 @@ public class MapsActivity extends AppCompatActivity implements ConnectionCallbac
     public void addViaPoint(GeoPoint p){
         viaPoints.add(p);
         updateItineraryMarker(null, p, viaPoints.size() - 1,
-                R.string.viapoint, R.drawable.marker_via, -1, null);
+                R.string.viapoint, Constants.VIA_POINT_ICON, -1, null);
     }
 
 

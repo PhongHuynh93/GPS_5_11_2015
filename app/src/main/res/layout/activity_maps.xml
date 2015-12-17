@@ -183,7 +183,7 @@
             android:id = "@+id/buttonTrackingMode"
             android:layout_alignParentLeft="true"
             android:layout_alignParentBottom="true"
-            android:background="@drawable/btn_tracking_off"/>
+            android:background="@drawable/track_off"/>
     </RelativeLayout>
 
 </LinearLayout>
